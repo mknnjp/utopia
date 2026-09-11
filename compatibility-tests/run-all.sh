@@ -73,7 +73,6 @@ echo "[3/4] Running k6 test suite..."
 
 export APP_BASE_URL
 export BOOTSTRAP_KEY
-export K6_OUT="json=${K6_OUTPUT_DIR}/load-results.json"
 
 # Run auth tests
 echo "  → Running auth tests..."
