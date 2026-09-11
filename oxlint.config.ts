@@ -22,7 +22,7 @@ export default defineConfig({
       },
     },
     {
-      files: ['k6/**/*.ts'],
+      files: ['compatibility-tests/**/*.ts'],
       rules: {
         // k6 test scripts use console.warn for diagnostics
         'eslint/no-console': 'off',

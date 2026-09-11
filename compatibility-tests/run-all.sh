@@ -3,8 +3,8 @@
 # k6 runner script — orchestrates the full compatibility test suite.
 #
 # Usage:
-#   ./k6/run-all.sh              # Run all tests with JSON output
-#   K6_OUTPUT_DIR=./results ./k6/run-all.sh  # Custom output directory
+#   ./compatibility-tests/run-all.sh              # Run all tests with JSON output
+#   K6_OUTPUT_DIR=./results/compatibility ./compatibility-tests/run-all.sh  # Custom output directory
 #
 # Prerequisites:
 #   - Docker Compose stack running (app + postgres)
@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 APP_BASE_URL="${APP_BASE_URL:-http://localhost:80}"
-K6_OUTPUT_DIR="${K6_OUTPUT_DIR:-${PROJECT_ROOT}/k6-results}"
+K6_OUTPUT_DIR="${K6_OUTPUT_DIR:-${PROJECT_ROOT}/results/compatibility}"
 BOOTSTRAP_KEY="${BOOTSTRAP_KEY:-replace-me-with-long-random-bootstrap-secret}"
 HEALTH_ENDPOINT="${APP_BASE_URL}/api/v1/about"
 HEALTH_TIMEOUT=30
@@ -73,7 +73,6 @@ echo "[3/4] Running k6 test suite..."
 
 export APP_BASE_URL
 export BOOTSTRAP_KEY
-export K6_OUT="json=${K6_OUTPUT_DIR}/k6-results.json"
 
 # Run auth tests
 echo "  → Running auth tests..."

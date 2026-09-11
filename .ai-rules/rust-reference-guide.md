@@ -25,7 +25,7 @@ The following files contain the detailed Rust rules for this project:
 - **Error handling**: Use the `FireflyError` type defined in `src/core/error_mapping/`
 - **Database**: Diesel ORM with async via `diesel-async`; migrations in `migrations/`
 - **API**: Axum handlers in `src/api/handlers/`; middleware in `src/api/middleware/`
-- **Auth**: JWT-based auth in `src/core/auth/`; token lifecycle tests in `tests/core/`
+- **Auth**: JWT-based auth in `src/core/auth/`; token lifecycle tests in `tests/unit/`
 - **Testing**: Integration tests in `tests/`; unit tests in `src/` alongside source files
 
 ## Forbidden

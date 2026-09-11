@@ -129,9 +129,9 @@ services:
       BOOTSTRAP_KEY: ${BOOTSTRAP_KEY:-replace-me-with-long-random-bootstrap-secret}
       DATABASE_URL: postgres://utopia:utopia@postgres:5432/utopia?sslmode=disable
     volumes:
-      - ../k6:/scripts/k6:ro
+      - ../compatibility-tests:/scripts/compatibility-tests:ro
       - ../scripts/seed:/scripts/seed:ro
-      - ../k6-results:/scripts/k6-results
+      - ../results/compatibility:/scripts/results/compatibility
     depends_on:
       utopia-api:
         condition: service_healthy
@@ -139,7 +139,7 @@ services:
         condition: service_started
     networks:
       - internal
-    working_dir: /scripts/k6
+    working_dir: /scripts/compatibility-tests
 
 volumes:
   postgres_data:

@@ -79,7 +79,9 @@ cargo clippy -- -D warnings
 - `src/` — application source code (server, handlers, core logic)
 - `migrations/` — database migrations
 - `docker/` — docker-compose and container helpers
-- `tests/` — integration and unit tests
+- `tests/` — Rust tests (`unit/` for logic, `integration/` for API/DB)
+- `compatibility-tests/` — k6 Firefly-III compatibility verification suite
+- `results/compatibility/` — k6 output artifacts (JSON reports, gitignored)
 - `aidlc/` — AI-DLC workspace (design artifacts, decision records, and method memory)
 
 ## Documentation

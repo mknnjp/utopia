@@ -71,8 +71,8 @@ jobs:
             --compatibility-mode=extended \
             --env APP_BASE_URL=http://utopia-api:3000 \
             --env BOOTSTRAP_KEY="${{ secrets.BOOTSTRAP_KEY || 'ci-test-bootstrap-key-2026' }}" \
-            --out json=/scripts/k6-results/auth-results.json \
-            /scripts/k6/auth.ts
+            --out json=/scripts/results/compatibility/auth-results.json \
+            /scripts/compatibility-tests/auth.ts
 
       - name: Reload seed data for accounts tests
         run: bun run scripts/seed/index.ts
@@ -86,8 +86,8 @@ jobs:
             --compatibility-mode=extended \
             --env APP_BASE_URL=http://utopia-api:3000 \
             --env BOOTSTRAP_KEY="${{ secrets.BOOTSTRAP_KEY || 'ci-test-bootstrap-key-2026' }}" \
-            --out json=/scripts/k6-results/accounts-results.json \
-            /scripts/k6/accounts.ts
+            --out json=/scripts/results/compatibility/accounts-results.json \
+            /scripts/compatibility-tests/accounts.ts
 
       - name: Reload seed data for transactions tests
         run: bun run scripts/seed/index.ts
@@ -101,15 +101,15 @@ jobs:
             --compatibility-mode=extended \
             --env APP_BASE_URL=http://utopia-api:3000 \
             --env BOOTSTRAP_KEY="${{ secrets.BOOTSTRAP_KEY || 'ci-test-bootstrap-key-2026' }}" \
-            --out json=/scripts/k6-results/transactions-results.json \
-            /scripts/k6/transactions.ts
+            --out json=/scripts/results/compatibility/transactions-results.json \
+            /scripts/compatibility-tests/transactions.ts
 
       - name: Upload k6 results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: k6-compatibility-results
-          path: k6-results/
+          path: results/compatibility/
           retention-days: 30
 
       - name: Tear down stack

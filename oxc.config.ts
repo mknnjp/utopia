@@ -10,7 +10,7 @@ export const ignorePatterns: string[] = [
   '**/*.yml',
   '**/coverage/**',
   '**/dist/**',
-  '**/k6-results/**',
+  '**/results/compatibility/**',
   '**/node_modules/**',
   '**/target/**',
   'AGENTS.md',

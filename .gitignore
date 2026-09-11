@@ -48,7 +48,7 @@ Thumbs.db
 
 # Misc
 .cargo/
-k6-results/
+results/compatibility/
 
 # AI-DLC — the committed-vs-ignored split (workspace layout, re-rooted under aidlc/).
 # Rule of thumb (vision §5.1): per-user session CURSORS and machine-local
