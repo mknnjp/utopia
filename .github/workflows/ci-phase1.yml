@@ -43,11 +43,14 @@ jobs:
       - name: Build (release)
         run: cargo build --release --locked
 
-      - name: Unit and default tests
-        run: cargo test --locked
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+      - name: Unit and default tests
+        run: cargo nextest run --locked
+
+      - name: Install cargo-audit (cached)
+        run: cargo install cargo-audit@0.21.0 --locked
 
       - name: Run cargo-audit (advisory only)
         id: cargo_audit
