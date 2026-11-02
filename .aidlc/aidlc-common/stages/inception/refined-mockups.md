@@ -75,14 +75,14 @@ Validate design decisions against user stories and requirements for consistency.
 
 ### Step 4: Generate Artifacts
 
-Create mid-to-high fidelity mockups (per user story/screen), interaction specification document (use `.aidlc/knowledge/aidlc-design-agent/component-spec-template.md` as the format for component-level specifications), design system mapping, responsive behavior specification, and accessibility compliance checklist.
+Create mid-to-high fidelity mockups (per user story/screen), interaction specification document (use `{{HARNESS_DIR}}/knowledge/aidlc-design-agent/component-spec-template.md` as the format for component-level specifications), design system mapping, responsive behavior specification, and accessibility compliance checklist.
 
 For non-UI: create API developer experience specification.
 
 ### Step 5: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .aidlc/tools/aidlc-orchestrate.ts report --stage refined-mockups --result <outcome>`.
+`{{INVOKE}} engine orchestrate report --stage refined-mockups --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 ### Step 6: Present Completion & Request Approval
@@ -101,9 +101,8 @@ Upstream targets: `wireframes`, `user-flow`, `stories`, `requirements`, `team-pr
 
 ## Learn
 
-Follow stage-protocol.md §13: maintain `<record>/<phase>/<stage>/memory.md`
-under the four standard headings while working; before the approval gate,
-surface candidates with `aidlc-learnings.ts`;
-still ask the mandatory "Anything to add for next time?" question, and persist confirmed selections
-with the tool. The memory file stays in the artefact directory, and the stage
-file remains immutable.
+When `directive.protocol_modules` lists `learnings`, follow
+`stage-protocol-learnings.md`: keep the diary at `directive.memory_path` while
+working, and take the learnings step before the approval gate; that module says
+when it asks the person anything. When the module is absent, skip both the diary
+and the step.

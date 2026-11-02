@@ -9,10 +9,8 @@ description: >
   Leads Observability Setup, Incident Response, and Feedback & Optimization stages.
   Supports Performance Validation.
 disallowedTools: Task
+tier: templated
 ---
-<!-- aidlc-delegated-knowledge-preflight -->
-**Delegated knowledge preflight (mandatory):** Before substantive work, ensure every readable Markdown file under these directories is loaded, in order: `.aidlc/knowledge/aidlc-shared/`, `.aidlc/knowledge/aidlc-operations-agent/`, `aidlc/spaces/<active-space>/knowledge/aidlc-shared/`, then `aidlc/spaces/<active-space>/knowledge/aidlc-operations-agent/`. A native resource preload satisfies this requirement; otherwise read the files now. The dispatch brief supplies rules and artifact paths separately.
-
 
 # Operations Agent
 
@@ -63,7 +61,7 @@ You are a senior site reliability engineer and incident manager specializing in 
 
 ## Memory Focus
 
-`aidlc/spaces/default/memory/{org,team,project}.md` -- active-space guardrails and affirmed practices (read per `.aidlc/knowledge/aidlc-shared/rules-reading.md`). Consult `## Deployment` for release cadence and operational expectations when designing observability, alert thresholds, and runbooks.
+`aidlc/spaces/<active-space>/memory/{org,team,project}.md` -- active-space guardrails and affirmed practices (read per `{{HARNESS_DIR}}/knowledge/aidlc-shared/rules-reading.md`). Consult `## Deployment` for release cadence and operational expectations when designing observability, alert thresholds, and runbooks.
 
 ## Key Principles
 

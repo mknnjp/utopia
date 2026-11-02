@@ -28,20 +28,7 @@
     ],
     "inputs": "none (first stage after session start)",
     "outputs": "the per-intent record tree (one dir per in-scope phase + verification dir) and the space-level knowledge/ dir",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": []
   },
   {
@@ -75,20 +62,7 @@
     ],
     "inputs": "none (scans filesystem)",
     "outputs": "workspace classification (greenfield/brownfield), technology stack detection",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": []
   },
   {
@@ -122,20 +96,7 @@
     ],
     "inputs": "workspace classification from workspace-detection, scope from orchestrator",
     "outputs": "<record>/aidlc-state.md (full populated version, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": []
   },
   {
@@ -166,8 +127,7 @@
       "enterprise",
       "feature",
       "mvp",
-      "poc",
-      "firefly-compat-inventory"
+      "poc"
     ],
     "reviewer": "aidlc-product-lead-agent",
     "review_artifact": "intent-statement",
@@ -176,24 +136,7 @@
     "summary_confirmation": "required",
     "inputs": "Authoritative project description (project-description utility), scope selection",
     "outputs": "intent-statement.md, stakeholder-map.md, intent-capture-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/ideation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "claim-sources",
@@ -209,7 +152,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -217,7 +160,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -257,24 +200,7 @@
     "summary_confirmation": "required",
     "inputs": "Intent statement from intent-capture stage",
     "outputs": "competitive-analysis.md, market-trends.md, build-vs-buy.md, market-research-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/ideation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -282,7 +208,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -290,7 +216,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -347,24 +273,7 @@
     "summary_confirmation": "required",
     "inputs": "Intent statement from intent-capture stage, market research from market-research stage (if executed)",
     "outputs": "feasibility-assessment.md, constraint-register.md, raid-log.md, feasibility-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/ideation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -372,7 +281,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -380,7 +289,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -431,24 +340,7 @@
     "summary_confirmation": "required",
     "inputs": "Intent statement, feasibility assessment, constraint register",
     "outputs": "scope-document.md, intent-backlog.md, scope-definition-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/ideation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -456,7 +348,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -464,7 +356,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -512,24 +404,7 @@
     "summary_confirmation": "required",
     "inputs": "Scope definition, intent backlog, feasibility assessment",
     "outputs": "team-assessment.md, skill-matrix.md, mob-composition.md, team-formation-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/ideation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -537,7 +412,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -545,7 +420,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -600,24 +475,7 @@
     "summary_confirmation": "required",
     "inputs": "Intent statement, scope definition, intent backlog",
     "outputs": "wireframes.md, user-flow.md, rough-mockups-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/ideation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -625,7 +483,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -633,7 +491,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -710,24 +568,7 @@
     "summary_confirmation": "required",
     "inputs": "All Ideation phase artifacts (intent, market research, feasibility, scope, team, mockups)",
     "outputs": "initiative-brief.md, decision-log.md, approval-handoff-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/ideation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -735,7 +576,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -743,7 +584,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -788,29 +629,11 @@
       "security-patch",
       "classic",
       "workshop",
-      "express",
-      "firefly-compat-inventory"
+      "express"
     ],
     "inputs": "<record>/aidlc-state.md",
     "outputs": "aidlc/spaces/<active-space>/codekb/<repo>/ (9 artifacts: business-overview.md, architecture.md, code-structure.md, api-documentation.md, component-inventory.md, technology-stack.md, dependencies.md, code-quality-assessment.md, reverse-engineering-timestamp.md)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/inception.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -818,7 +641,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -826,7 +649,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -901,24 +724,7 @@
     "summary_confirmation": "required",
     "inputs": "<record>/aidlc-state.md + (brownfield) reverse-engineering evidence",
     "outputs": "team-practices.md, discovered-rules.md, evidence.md, practices-discovery-timestamp.md, plus one contribution file per support agent. On affirmation, content is promoted to aidlc/spaces/<active-space>/memory/team.md and project.md.",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/inception.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -926,7 +732,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -934,7 +740,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -951,6 +757,9 @@
     "produces": [
       "requirements",
       "requirements-analysis-questions"
+    ],
+    "optional_produces": [
+      "traceability"
     ],
     "consumes": [
       {
@@ -981,6 +790,10 @@
         "required": false
       }
     ],
+    "cites": [
+      "intent-statement",
+      "scope-document"
+    ],
     "requires_stage": [
       "approval-handoff",
       "reverse-engineering"
@@ -1000,8 +813,7 @@
       "security-patch",
       "classic",
       "workshop",
-      "express",
-      "firefly-compat-inventory"
+      "express"
     ],
     "reviewer": "aidlc-product-lead-agent",
     "review_artifact": "requirements",
@@ -1009,25 +821,8 @@
     "review_class": "advisory",
     "summary_confirmation": "required",
     "inputs": "RE artifacts (if brownfield), authoritative project description (project-description utility)",
-    "outputs": "requirements.md, requirements-analysis-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/inception.md",
-        "scope": "phase"
-      }
-    ],
+    "outputs": "requirements.md, requirements-analysis-questions.md, traceability.json (Step 10: an `ids` list with one entry per FR and NFR ID, spelled exactly as requirements.md spells it, each with `kind` functional or non-functional and, for a sub-requirement, `of` its requirement) (under this stage's record dir, engine-resolved)",
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -1035,7 +830,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1043,7 +838,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -1109,24 +904,7 @@
     "summary_confirmation": "required",
     "inputs": "<record>/inception/requirements-analysis/requirements.md, RE artifacts (if brownfield)",
     "outputs": "stories.md, personas.md, user-stories-assessment.md, traceability.json (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/inception.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -1134,7 +912,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1142,12 +920,12 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -1216,24 +994,7 @@
     "summary_confirmation": "required",
     "inputs": "Rough mockups from rough-mockups stage, user stories from user-stories stage, requirements from requirements-analysis stage",
     "outputs": "mockups.md, interaction-spec.md, design-system-mapping.md, accessibility-checklist.md, refined-mockups-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/inception.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -1241,7 +1002,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1249,7 +1010,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -1318,24 +1079,7 @@
     "summary_confirmation": "required",
     "inputs": "<record>/inception/requirements-analysis/requirements.md, <record>/inception/user-stories/stories.md (if produced), RE artifacts (if brownfield)",
     "outputs": "components.md (fenced ```yaml component catalogue plus a human-readable mermaid diagram and summary table), decisions.md (Architecture Decision Records), and traceability.json — all under this stage's record dir, engine-resolved",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/inception.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -1343,7 +1087,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1351,12 +1095,12 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -1421,24 +1165,7 @@
     "summary_confirmation": "required",
     "inputs": "<record>/inception/domain-design/components.md, <record>/inception/requirements-analysis/requirements.md, <record>/inception/user-stories/stories.md (if produced)",
     "outputs": "unit-of-work.md, unit-of-work-dependency.md, unit-of-work-story-map.md, traceability.json (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/inception.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -1446,7 +1173,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1454,12 +1181,12 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -1520,24 +1247,7 @@
     "summary_confirmation": "required",
     "inputs": "<record>/inception/units-generation/unit-of-work.md, <record>/inception/units-generation/unit-of-work-dependency.md, <record>/inception/domain-design/components.md (if produced), <record>/inception/requirements-analysis/requirements.md",
     "outputs": "contract-summary.md (under this stage's record dir, engine-resolved) — a human-readable overview of every contract (inter-unit boundaries and public/external APIs), each with a fenced spec block (OpenAPI / AsyncAPI / shared schema) inline",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/inception.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -1545,7 +1255,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1553,7 +1263,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -1631,24 +1341,7 @@
     "summary_confirmation": "required",
     "inputs": "All Inception artifacts (requirements, stories, mockups, architecture, units)",
     "outputs": "bolt-plan.md, team-allocation.md, risk-and-sequencing-rationale.md, external-dependency-map.md, delivery-planning-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/inception.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -1656,7 +1349,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1664,7 +1357,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -1727,6 +1420,10 @@
         "required": false
       },
       {
+        "artifact": "stories",
+        "required": false
+      },
+      {
         "artifact": "requirements",
         "required": true
       },
@@ -1763,26 +1460,9 @@
     "reviewer_max_iterations": 2,
     "review_class": "adversarial",
     "summary_confirmation": "required",
-    "inputs": "unit-of-work.md, unit-of-work-story-map.md, requirements.md, domain-design components.md, contract-design contract-summary.md (if produced)",
+    "inputs": "unit-of-work.md, unit-of-work-story-map.md, user-stories stories.md (if produced), requirements.md, domain-design components.md, contract-design contract-summary.md (if produced)",
     "outputs": "entities.md, rules.md, functional-spec.md, traceability.json, CONDITIONAL: frontend-components.md (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (untagged unit: all). entities.md and rules.md each carry a fenced ```yaml source-of-truth block; functional-spec.md is the source of truth for workflows and state machines and carries derived ER-diagram and rules-summary views.",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/construction.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -1790,7 +1470,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1798,7 +1478,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "linter",
@@ -1819,7 +1499,7 @@
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -1915,24 +1595,7 @@
     "summary_confirmation": "required",
     "inputs": "functional design artifacts, requirements.md, RE artifacts",
     "outputs": "performance-requirements.md, security-requirements.md, scalability-requirements.md, reliability-requirements.md, observability-requirements.md, tech-stack-decisions.md, traceability.json (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (untagged unit: all)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/construction.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -1940,7 +1603,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1948,7 +1611,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "linter",
@@ -1969,7 +1632,7 @@
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -2078,24 +1741,7 @@
     "summary_confirmation": "required",
     "inputs": "NFR requirements artifacts, functional design artifacts",
     "outputs": "performance-design.md, security-design.md, scalability-design.md, reliability-design.md, observability-design.md, logical-components.md, traceability.json (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (untagged unit: all)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/construction.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -2103,7 +1749,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2111,7 +1757,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "linter",
@@ -2132,7 +1778,7 @@
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -2247,24 +1893,7 @@
     "summary_confirmation": "required",
     "inputs": "NFR design artifacts, domain design components.md, functional design",
     "outputs": "infrastructure-specification.md (deployment + services + shared, tabular), monitoring-design.md (tabular), cicd-pipeline.md, traceability.json (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (a spec unit owes none)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/construction.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -2272,7 +1901,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2280,7 +1909,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "linter",
@@ -2301,7 +1930,7 @@
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -2373,8 +2002,6 @@
     ],
     "sensors": [
       "required-sections",
-      "linter",
-      "type-check",
       "traceability"
     ],
     "scopes": [
@@ -2394,25 +2021,8 @@
     "reviewer_max_iterations": 2,
     "review_class": "adversarial",
     "inputs": "ALL prior design artifacts for this unit",
-    "outputs": "application code + code-generation-plan.md, code-generation-questions.md, unit-test-instructions.md, code-summary.md, traceability.json (under this stage's per-unit record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/construction.md",
-        "scope": "phase"
-      }
-    ],
+    "outputs": "application code + code-generation-plan.md, code-generation-questions.md, unit-test-instructions.md, code-summary.md, traceability.json (under this stage's per-unit record dir, engine-resolved; the engine writes code-generation-questions.md)",
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -2420,28 +2030,12 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
-      },
-      {
-        "id": "linter",
-        "path": ".aidlc/sensors/aidlc-linter.md",
-        "fire_on": "write",
-        "default_severity": "advisory",
-        "category": "code-quality",
-        "matches": "**/*.{ts,js}"
-      },
-      {
-        "id": "type-check",
-        "path": ".aidlc/sensors/aidlc-type-check.md",
-        "fire_on": "write",
-        "default_severity": "advisory",
-        "category": "code-quality",
-        "matches": "**/*.{ts,tsx}"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -2462,12 +2056,14 @@
     "mode": "inline",
     "produces": [
       "build-instructions",
-      "integration-test-instructions",
-      "performance-test-instructions",
-      "security-test-instructions",
       "build-and-test-summary",
       "build-test-results",
       "cross-unit-traceability"
+    ],
+    "optional_produces": [
+      "integration-test-instructions",
+      "performance-test-instructions",
+      "security-test-instructions"
     ],
     "consumes": [
       {
@@ -2504,25 +2100,8 @@
       "express"
     ],
     "inputs": "ALL code generation outputs across all units",
-    "outputs": "build-instructions.md, integration-test-instructions.md, performance-test-instructions.md, security-test-instructions.md, build-and-test-summary.md, test-results.md, cross-unit-traceability.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/construction.md",
-        "scope": "phase"
-      }
-    ],
+    "outputs": "build-instructions.md, build-and-test-summary.md, test-results.md, cross-unit-traceability.md, CONDITIONAL: integration-test-instructions.md (Standard and above), performance-test-instructions.md and security-test-instructions.md (Comprehensive, when that NFR kind exists) (under this stage's record dir, engine-resolved)",
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -2530,7 +2109,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2538,7 +2117,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "type-check",
@@ -2593,30 +2172,12 @@
       "feature",
       "mvp",
       "infra",
-      "classic",
       "workshop"
     ],
     "summary_confirmation": "required",
     "inputs": "Code generation output from code-generation stage, build/test results from build-and-test stage",
     "outputs": "ci-config.md, quality-gates.md, ci-pipeline-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/construction.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -2624,7 +2185,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2632,7 +2193,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "linter",
@@ -2701,31 +2262,13 @@
       "bugfix",
       "refactor",
       "security-patch",
-      "classic",
       "workshop",
       "express"
     ],
     "summary_confirmation": "required",
     "inputs": "CI pipeline config from ci-pipeline stage, infrastructure design from infrastructure-design stage",
     "outputs": "cd-config.md, deployment-strategy.md, rollback-runbook.md, deployment-pipeline-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/operation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -2733,7 +2276,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2741,7 +2284,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -2785,30 +2328,12 @@
       "enterprise",
       "feature",
       "infra",
-      "classic",
       "workshop"
     ],
     "summary_confirmation": "required",
     "inputs": "Infrastructure design from infrastructure-design stage, CD pipeline config from deployment-pipeline stage",
     "outputs": "environment-inventory.md, validation-report.md, environment-provisioning-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/operation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -2816,7 +2341,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2824,7 +2349,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -2879,31 +2404,13 @@
       "bugfix",
       "refactor",
       "security-patch",
-      "classic",
       "workshop",
       "express"
     ],
     "summary_confirmation": "required",
     "inputs": "CD pipeline config from deployment-pipeline stage, provisioned environments from environment-provisioning stage, built artifacts from Construction",
     "outputs": "deployment-log.md, smoke-test-results.md, health-check-report.md, deployment-execution-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/operation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -2911,7 +2418,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2919,7 +2426,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -2977,31 +2484,13 @@
       "enterprise",
       "feature",
       "infra",
-      "classic",
       "workshop",
       "express"
     ],
     "summary_confirmation": "required",
     "inputs": "NFR design from nfr-design stage, infrastructure design from infrastructure-design stage, deployed application",
     "outputs": "dashboards.md, alarms.md, slo-config.md, log-queries.md, tracing-config.md, anomaly-config.md, observability-setup-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/operation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -3009,7 +2498,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -3017,7 +2506,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -3069,30 +2558,12 @@
     "scopes": [
       "enterprise",
       "feature",
-      "classic",
       "workshop"
     ],
     "summary_confirmation": "required",
     "inputs": "Observability setup from observability-setup stage, NFR design from nfr-design stage, infrastructure design from infrastructure-design stage",
     "outputs": "runbooks.md, incident-plan.md, escalation-matrix.md, incident-response-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/operation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -3100,7 +2571,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -3108,7 +2579,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -3162,30 +2633,12 @@
     "scopes": [
       "enterprise",
       "feature",
-      "classic",
       "workshop"
     ],
     "summary_confirmation": "required",
     "inputs": "NFR requirements from nfr-requirements stage, NFR design from nfr-design stage, deployed application, observability data from observability-setup stage",
     "outputs": "load-test-plan.md, test-results.md, nfr-validation-matrix.md, performance-validation-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/operation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -3193,7 +2646,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -3201,7 +2654,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -3263,30 +2716,12 @@
     "scopes": [
       "enterprise",
       "feature",
-      "classic",
       "workshop"
     ],
     "summary_confirmation": "required",
     "inputs": "All Operation phase artifacts, production monitoring data",
     "outputs": "slo-report.md, cost-analysis.md, drift-report.md, feedback-loop.md, feedback-optimization-questions.md (under this stage's record dir, engine-resolved)",
-    "rules_in_context": [
-      {
-        "path": "aidlc/spaces/default/memory/org.md",
-        "scope": "org"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/team.md",
-        "scope": "team"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/project.md",
-        "scope": "project"
-      },
-      {
-        "path": "aidlc/spaces/default/memory/phases/operation.md",
-        "scope": "phase"
-      }
-    ],
+    "rules_in_context": [],
     "sensors_applicable": [
       {
         "id": "required-sections",
@@ -3294,7 +2729,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -3302,7 +2737,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   }

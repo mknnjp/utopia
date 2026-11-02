@@ -12,7 +12,7 @@ Files placed in these directories are loaded by agents during every stage (after
 
 ## Directory Structure
 
-> This table is a snapshot — the authoritative mapping lives in each agent's frontmatter at `.aidlc/agents/*.md`.
+> This table is a snapshot — the authoritative mapping lives in each agent's frontmatter at `{{HARNESS_DIR}}/agents/*.md`.
 
 | Directory | Purpose | Example files |
 |-----------|---------|---------------|

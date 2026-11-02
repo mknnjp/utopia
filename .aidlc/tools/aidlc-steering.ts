@@ -5,19 +5,24 @@
 // attach the exact bundle to a subagent brief, so the conductor-to-worker hop
 // cannot drift from the engine-to-conductor hop.
 
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import {
+  DEFAULT_SPACE,
   errorMessage,
   resolveWorkflowSelection,
   toPosix,
 } from "./aidlc-lib.ts";
 import {
+  copyFrameworkPhaseRules,
+  frameworkMemorySeedDir,
   type GraphStage,
   memoryDirFor,
 } from "./aidlc-graph.ts";
 
-export type RuleEntry = { rel: string; abs: string };
+// `seed`: the framework's copy of a phase rule file, for a space that may lack
+// its own (see restoreSpacePhaseRules).
+export type RuleEntry = { rel: string; abs: string; seed?: string };
 export type RuleContent = { path: string; text: string };
 
 // These are explanatory preambles in the shipped empty team/project templates,
@@ -53,7 +58,7 @@ export function isSubstantiveRuleText(text: string): boolean {
 }
 
 // Resolve graph display paths against the active space. AIDLC_RULES_DIR keeps
-// its existing precedence for Codex and fixture-driven callers.
+// its existing precedence for fixture-driven callers.
 export function rulesContentEntries(
   node: GraphStage,
   projectDir: string,
@@ -65,6 +70,9 @@ export function rulesContentEntries(
       ? configuredMemoryDir
       : resolve(projectDir, configuredMemoryDir)
     : memoryDirFor(projectDir, space);
+  const seedPhases = configuredMemoryDir || space === DEFAULT_SPACE
+    ? null
+    : join(frameworkMemorySeedDir(), "phases");
   return (node.rules_in_context ?? []).map((rule) => {
     const marker = "/memory/";
     const index = rule.path.indexOf(marker);
@@ -75,11 +83,44 @@ export function rulesContentEntries(
       };
     }
     const subpath = rule.path.slice(index + marker.length);
-    return {
+    const entry: RuleEntry = {
       rel: toPosix(join("aidlc", "spaces", space, "memory", subpath)),
       abs: join(memoryDir, subpath),
     };
+    if (seedPhases && subpath.startsWith("phases/")) {
+      entry.seed = join(seedPhases, subpath.slice("phases/".length));
+    }
+    return entry;
   });
+}
+
+function missingFile(path: string): boolean {
+  try {
+    return lstatSync(path, { throwIfNoEntry: false }) === undefined;
+  } catch {
+    return false;
+  }
+}
+
+function readRuleText(path: string): string {
+  return new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(path));
+}
+
+// A space made by `space create` before #2419 got an empty memory/phases/, and
+// a clone of it has no phases/ folder at all, so a stage that reads one of its
+// phase rule files would stop. When this stage needs one the space lacks, the
+// space gets the framework's copies, as a new space does, never over a file
+// the team wrote. Until they are written (an observer writes nothing) the
+// stage reads the framework's copy in its place. The default space ships its
+// own files, so one missing there is the team's to put back. Returns the names
+// written.
+export function restoreSpacePhaseRules(entries: RuleEntry[], memoryDir: string): string[] {
+  if (!entries.some((entry) => entry.seed && missingFile(entry.abs))) return [];
+  try {
+    return copyFrameworkPhaseRules(memoryDir);
+  } catch {
+    return [];
+  }
 }
 
 export function readRuleBundle(
@@ -92,15 +133,31 @@ export function readRuleBundle(
     seen.add(entry.rel);
     let text: string;
     try {
-      const bytes = readFileSync(entry.abs);
-      text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      text = readRuleText(entry.abs);
     } catch (error) {
-      return {
-        content: [],
-        error:
-          `Cannot load required stage rule "${entry.rel}" (${errorMessage(error)}). ` +
-          "The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again.",
-      };
+      // Only a missing file is put back from version control: one that is
+      // there holds the team's edits, so it is repaired in place.
+      const missing = missingFile(entry.abs);
+      let seeded: string | null = null;
+      if (missing && entry.seed) {
+        try {
+          seeded = readRuleText(entry.seed);
+        } catch {
+          seeded = null;
+        }
+      }
+      if (seeded === null) {
+        return {
+          content: [],
+          error:
+            `Cannot load required stage rule "${entry.rel}" (${errorMessage(error)}). The stage has not started. ` +
+            (missing
+              ? `Put the file back (for example \`git checkout -- ${entry.rel}\` when the project tracks it), `
+              : "Keep a copy of the file, then fix its permissions or save it as UTF-8, ") +
+            "then run `next` again.",
+        };
+      }
+      text = seeded;
     }
     if (isSubstantiveRuleText(text)) content.push({ path: entry.rel, text });
   }

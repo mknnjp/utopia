@@ -93,7 +93,7 @@ skeleton. A term whose definition would not survive being compressed to a clause
 is a term to replace with plain words instead.
 - **Confidence hypothesis** — the observable behaviour that shipping the Bolt validates or falsifies (e.g., "latency stays under 200ms under 1k-rps load," "users complete signup without support tickets," "the event pipeline survives a 10x burst").
 - **WSJF** (Reinertsen / SAFe) — Weighted Shortest Job First. Sequence score = (user-business value + time criticality + risk-reduction value) ÷ job size. Higher score ships first.
-- **Walking skeleton** (Cockburn) — the first Bolt is a minimal end-to-end slice touching every architectural layer that proves the architecture works; features come in later Bolts.
+- **Walking skeleton** (Cockburn) — the first DAG Unit delivers the smallest working end-to-end slice through the relevant integration points. Its applicable design stages and Code Generation finish before later Units; a real integrated check and human checkpoint approval demonstrate the result.
 
 Create `<record>/inception/delivery-planning/delivery-planning-questions.md` with questions. Strategic questions (one answer per project):
 
@@ -112,7 +112,14 @@ Per-Bolt questions (the aidlc-delivery-agent loops these during artifact generat
 - What will shipping this Bolt tell us that we do not know yet?
 - Which mob owns this Bolt? (References teams from 1.5 when 1.5 ran; when 1.5 was SKIP — mvp, classic — default to aidlc-developer-agent for all Bolts.)
 
-NOTE: Bolt sequencing is economic, not topological. Bolt order may deviate from 2.7's topological order when a risk-first or walking-skeleton-first argument justifies it. The deviation must be captured in `risk-and-sequencing-rationale.md`.
+NOTE: Bolt sequencing records the economic rationale, while the engine consumes
+the actual Unit DAG and iteration choice. When skeleton-on applies, confirm that
+the first resolved DAG Unit is the smallest working integrated slice, name its
+expected demo and the real project check that will prove it end to end, and make
+its prerequisites explicit. If the decomposition cannot support that slice,
+revisit Units Generation before Construction. Reordering only `bolt-plan.md`
+does not change the Unit the engine builds first; never describe the first
+design-stage review as a shipped skeleton.
 
 NOTE: This stage plans the Bolt sequence. It does NOT decide which AIDLC stages to run or at what depth — that is handled by the `/aidlc` skill's scope selection.
 
@@ -158,62 +165,114 @@ stage before Construction begins.
 ### Step 6: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .aidlc/tools/aidlc-orchestrate.ts report --stage delivery-planning --result <outcome>`.
+`{{INVOKE}} engine orchestrate report --stage delivery-planning --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
-**Construction iteration.** Classify how the approved `bolt-plan.md` wants the
-per-unit construction stages (functional-design, nfr-requirements, nfr-design,
-infrastructure-design, code-generation) to iterate over Units of Work. A
-unit-at-a-time or walking-skeleton-first plan typically calls for designing AND
-building one unit completely before the next unit begins — the first working
-code lands after one unit's design, honoring a skeleton-first sequence; a plan
-that reasons stage-by-stage across all units does not. Only when the plan calls
-for the unit-first order, record it:
-`bun .aidlc/tools/aidlc-state.ts set-construction-iteration unit-major`.
-The default is `stage-major` (each design stage runs for every unit, then the
-next stage, with code-generation last), needs no write, and is byte-identical
-to prior behaviour. Under `unit-major` the same per-stage gates still fire, but
-late and in a cascade at the end of the block (one human approval per stage),
-and the autonomous Construction swarm never fires (the walk owns
-code-generation serially, in Bolt build order), so opt in when the plan
-justifies per-unit coherence and early working code over parallel batch
-builds.
+**Construction iteration.** Read the recorded choice before you recommend
+an order. New workflows start with `Construction Checkpoints: enabled` and
+`Construction Iteration: unit-major` with `Construction Execution: serial`:
+each Unit's applicable design stages and Code Generation run serially, followed
+by its verified completion checkpoint.
+An explicit stage-major choice remains valid. To enable later Code Generation
+batches, obtain the human's execution choice, set iteration to stage-major, then
+run `{{INVOKE}} engine state set-construction-execution swarm`. This works with
+either gated or autonomous completion approval; the autonomy answer never changes
+execution order. Unit-major stays serial and refuses a contradictory swarm
+setting; select serial before returning to unit-major. For checkpoint-enabled work,
+skeleton-on always completes the first DAG Unit's full integrated slice before
+later Units, under either iteration order.
 
-**Construction staffing.** After classifying iteration, ask:
+Preserve an existing explicit choice. When the person asks to change the order
+("let's do each stage for both units together first"), run
+`{{INVOKE}} engine state set-construction-iteration <unit-major|stage-major>` in
+that turn and say its `notice` line word for word; do not ask them to confirm it.
+Do not silently migrate a legacy workflow: without the checkpoint field it keeps
+its prior first-stage review, and its late stage approvals come as one question.
+Team-owned work keeps
+its own per-stage or unit-end `unit_gate` policy. Plan Approval, summary
+confirmation, and verification command selection remain human decisions under
+either order and autonomy choice.
 
-> "How do you want to staff Construction? I can build every unit right here,
-> one at a time, with you approving as we go - or, if you have several teams,
-> each team can own a unit and approve its work independently."
+**Construction verification command.** For checkpoint-enabled work, preserve an
+existing human-authorized command. Otherwise propose a real project check from
+the project scan (`bun test`, `pytest`, `make check`, or the project's equivalent)
+alongside the iteration/execution settings. This intent-level command is reused
+at every Unit/batch checkpoint; it must check completed Units' working results
+and, with skeleton-on, demonstrate the integrated slice end to end. It must run
+every test level the project's testing rules require (the Testing Contract that
+Code Generation renders from the memory's Testing Posture: unit, integration,
+end-to-end as applicable) and the coverage check. When a required level cannot
+run on this machine (no container runtime, no running service), say so in the
+question: add to the Approve option's description the tests the command will not
+run and why, for example "Runs typecheck and unit tests. Does not run the
+integration tests: they need Docker, which is not installed." Never pick a
+narrower command to avoid a missing runtime without saying so, and never answer
+the gap with "CI runs them" when the plan skips CI Pipeline or the repository has
+no CI configuration. If no runnable check
+exists yet (greenfield), the human may defer selection; leave the field
+unset and explain that the first checkpoint will ask before verification. Never
+invent a placeholder or treat deferral as approval.
 
-The several-teams choice requires the unit-first order above. If the plan is not
-already unit-major, explain that prerequisite and confirm switching before
-recording:
-`bun .aidlc/tools/aidlc-state.ts set-construction-iteration unit-major`,
-then
-`bun .aidlc/tools/aidlc-state.ts set-unit-ownership team`. Team ownership
-requires the workspace root itself to be the source Git repository; intents with
-recorded sibling repos must remain solo.
-For the one-session choice, leave the field absent (the byte-identical default)
-or record `set-unit-ownership solo`.
+Only one protected question may be open per session. Ask protected questions
+one at a time and wait for the answer before anything else.
 
-**Team check-in rhythm.** Only after team ownership is selected, ask:
+Use one nonblank line of at most 1024 characters after trimming leading/trailing
+whitespace. The tools refuse control characters (including newline, CR, tab, or
+NUL) and display-spoofing characters: Unicode format characters (including
+zero-width and bidi controls), line/paragraph separators, and no-break space
+(U+00A0). The trimmed command is recorded, hashed, and executed unchanged. Put
+multiline checks in a script and record its invocation. Before presenting the command, write it as
+UTF-8 text to `<record>/verification-command.txt` using the harness's
+file-write tool (Write/edit), never a shell `echo` or heredoc. Repo-derived
+command text must never be interpolated into a shell line: shell substitutions
+could execute before the human approves. Pass only the record-relative file path
+below; the command finds the session it runs in by itself, so pass no session
+and never look one up:
 
-> "While a team builds their unit, how often should I check in for approval?
-> After each stage is the safer default: a wrong turn is caught before the next
-> stage builds on it. Once at the end means fewer interruptions: one review
-> after the unit's design and code are complete."
+```bash
+{{INVOKE}} engine log decision --stage "<directive.stage>" --checkpoint verification-command --command-file verification-command.txt --decision "Use this command to verify each completed Unit?" --options "Approve,Request Changes"
+```
 
-Record the answer with
-`bun .aidlc/tools/aidlc-state.ts set-unit-gate-rhythm per-stage` or
-`... unit-end`. If the field is absent under team ownership, `per-stage` is the
-default. These names are tool vocabulary; present the plain-language choices,
-not the field or enum names.
+Copy the complete canonical command exactly from the `command` field in the
+`log decision` tool's JSON output into the structured question's code span; never
+abbreviate or substitute a summary, prefix, or digest. Use a code-span delimiter
+long enough to preserve any backticks in the command. The human can also open
+`<record>/verification-command.txt`. Wait for the human:
+
+```question
+prompt: "Use this command to verify each completed Unit? `<full command>`"
+header: Verification
+multiSelect: false
+options:
+  - label: Approve
+    description: Record this command for all Unit and batch checkpoints in this intent.
+  - label: Request Changes
+    description: Propose a different project check before running verification.
+```
+
+Read the person's reply and record the choice they made. The
+human-turn hook keeps that they replied to this question and their exact words;
+a reply typed in a new chat is kept for it while it is the newest question
+asked, and a reply to another question does not count. When they
+approve, record their answer, and set the command with the matching tool-owned
+receipt:
+
+```bash
+{{INVOKE}} engine log answer --stage "<directive.stage>" --checkpoint verification-command --command-file verification-command.txt --details "Approve"
+{{INVOKE}} engine state set-construction-verification-command --command-file verification-command.txt
+```
+
+For **Request Changes**, record the same `log answer` with
+`--details "Request Changes"`, leave the state unchanged, and propose another
+command. Never auto-approve, write the state field without the receipt, or use
+generic `state set`. A later change requires a new human decision/answer receipt
+and the typed setter; an autonomy grant does not authorize command selection.
 
 ### Step 7: Present Completion & Request Approval
 
 Completion emoji: :calendar:
 Review path: `<record>/inception/delivery-planning/`
-Approval gate: Approve (proceed to Construction) / Request Changes.
+Approval gate: Approve (Continue to `<directive.next_stage>`, the stage the engine names) / Request Changes.
 
 ## Sensors
 
@@ -225,9 +284,8 @@ Upstream targets: `requirements`, `stories`, `mockups`, `components`, `unit-of-w
 
 ## Learn
 
-Follow stage-protocol.md §13: maintain `<record>/<phase>/<stage>/memory.md`
-under the four standard headings while working; before the approval gate,
-surface candidates with `aidlc-learnings.ts`;
-still ask the mandatory "Anything to add for next time?" question, and persist confirmed selections
-with the tool. The memory file stays in the artefact directory, and the stage
-file remains immutable.
+When `directive.protocol_modules` lists `learnings`, follow
+`stage-protocol-learnings.md`: keep the diary at `directive.memory_path` while
+working, and take the learnings step before the approval gate; that module says
+when it asks the person anything. When the module is absent, skip both the diary
+and the step.

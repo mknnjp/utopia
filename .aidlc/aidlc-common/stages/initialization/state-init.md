@@ -1,5 +1,6 @@
 ---
 slug: state-init
+name: State Initialization
 phase: initialization
 execution: ALWAYS
 condition: Creates full populated state file and determines routing — auto-proceeds
@@ -40,7 +41,7 @@ Runs deterministically inside `aidlc-utility init`. Kept as reference for state-
 
 ### Step 2: Create Full State File
 
-Read the state contract from `.aidlc/knowledge/aidlc-shared/state-template.md`.
+Read the state contract from `{{HARNESS_DIR}}/knowledge/aidlc-shared/state-template.md`.
 Overwrite `<record>/aidlc-state.md` with the full populated version generated
 from the compiled stage graph and scope grid:
 - Project description: persist the exact text in
@@ -48,15 +49,15 @@ from the compiled stage graph and scope grid:
   single-line preview to the state `Project` field
 - Project type (greenfield/brownfield from workspace-detection)
 - Workspace state (languages, frameworks, build system from workspace-detection)
-- Start date — run `date -u +'%Y-%m-%dT%H:%M:%SZ'` via Bash
+- Start date: the time `{{INVOKE}} engine now` prints
 - Scope configuration (stages to execute/skip per scope routing)
 - Full stage progress checkboxes (all stages, with INITIALIZATION stages marked [x] for workspace-scaffold, workspace-detection)
 - Mark state-init as `[-]` in progress
 - Total Stages: count EXECUTE stages only (not SKIP). Authoritative counts come
-  from the compiled scope grid (`.aidlc/tools/data/scope-grid.json`),
+  from the compiled scope grid (`{{HARNESS_DIR}}/tools/data/scope-grid.json`),
   transposed from each stage's `scopes:` frontmatter. Run
-  `bun .aidlc/tools/aidlc-utility.ts scope-table` for the live scope
-  counts and `bun .aidlc/tools/aidlc-utility.ts stage-table` for the
+  `{{INVOKE}} engine gen scope-table` for the live scope
+  counts and `{{INVOKE}} engine gen stage-table` for the
   live compiled stage list.
 - Completed: set to number of completed INITIALIZATION stages (typically 3)
 - In Progress: set to first post-initialization stage name
@@ -86,7 +87,7 @@ Update aidlc-state.md with the routing decision:
 ### Step 5: Update State and Audit
 
 1. Mark state-init as `[x]` completed in `<record>/aidlc-state.md`
-2. Append WORKSPACE_INITIALISED event to `<record>/audit/<host>-<clone>.md` with project type and tech stack summary
+2. The engine records WORKSPACE_INITIALISED in the audit trail, with the project type and tech stack summary; never append it yourself
 
 ### Step 6: Auto-Proceed
 
@@ -105,10 +106,8 @@ A future state-shape check should be a dedicated manifest imported here.
 
 ## Learn
 
-Follow stage-protocol.md §13 by maintaining
-`<record>/<phase>/<stage>/memory.md` under the four standard headings; the
-memory file stays in the artefact directory and the stage file remains
-immutable. This auto-proceeding bootstrap stage (`gate: false`) has no
-approval gate, so skip surfacing and persisting learnings and the mandatory
-"Anything to add for next time?" question; the gate-bound ritual begins with
-the first post-initialization stage.
+When `directive.protocol_modules` lists `learnings`, follow
+`stage-protocol-learnings.md`: keep the diary at `directive.memory_path` while
+working, and take the learnings step before the approval gate; that module says
+when it asks the person anything. When the module is absent, skip both the diary
+and the step.

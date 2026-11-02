@@ -99,28 +99,36 @@ The lead writes an initial version of all four declared artifacts under
 `<record>/inception/practices-discovery/`. The timestamp artifact remains a
 draft until final integration. Only the lead edits these declared artifacts.
 
-### Step 3: Blind Support Review (Always)
+### Step 3: Blind Support Review
 
-Dispatch all three support agents as one parallel batch when the harness
-supports parallel delegation. Every brief contains only the stage path, the
-lead draft paths, and relevant evidence paths. No brief or context may contain
-a sibling's contribution: the spokes are mutually blind.
+Dispatch exactly the collaborators the directive lists in `support_agents`, as
+one parallel batch when the harness supports parallel delegation. Every brief
+contains only the stage path, the lead draft paths, and relevant evidence
+paths. No brief or context may contain a sibling's contribution: the spokes are
+mutually blind.
 
-1. **aidlc-quality-agent** - assess testing posture, coverage tooling, CI
-   quality gates, test/code patterns, and gaps the interview must resolve.
-2. **aidlc-developer-agent** - assess naming, layer boundaries, error handling,
-   file organization, and code-style conventions.
-3. **aidlc-devsecops-agent** - assess lint/format rules, SAST/DAST, secret and
-   dependency scanning, and supply-chain controls.
+**If `directive.support_agents` is empty, skip this step entirely** — the
+collaborators switch is off for this scope, so the lead works alone
+(`stage-protocol-ensemble.md` §5): the lead's draft stands as the practices,
+the interview resolves them, and no spoke review runs. The full roster, when
+present, is:
 
-Each support agent writes:
+- **aidlc-quality-agent** - assess testing posture, coverage tooling, CI
+  quality gates, test/code patterns, and gaps the interview must resolve.
+- **aidlc-developer-agent** - assess naming, layer boundaries, error handling,
+  file organization, and code-style conventions.
+- **aidlc-devsecops-agent** - assess lint/format rules, SAST/DAST, secret and
+  dependency scanning, and supply-chain controls.
+
+Each dispatched support agent writes:
 
 `<record>/inception/practices-discovery/contributions/<agent-slug>.md`
 
 The first line must be `**Collaborator:** <agent-slug>`, followed by
 `## Contribution` and `## Positions` as defined by
-`stage-protocol-ensemble.md` §11. Collect all three files before the interview. Their presence and identity
-markers are deterministic completion evidence checked by the engine.
+`stage-protocol-collaborators.md`. Collect every dispatched collaborator's file
+before the interview. Their presence and identity markers are deterministic
+completion evidence checked by the engine.
 
 ### Step 4: Interview (Always)
 
@@ -161,14 +169,17 @@ following the standard non-gate question flow.
 ### Step 5: Lead Integration
 
 Delegate a final integration turn to `aidlc-pipeline-deploy-agent`. Pass the
-lead draft paths, all three contribution paths, and the completed interview
-file. The lead alone updates the four declared artifacts:
+lead draft paths, every contribution path produced in Step 3 (none when the
+lead works alone), and the completed interview file. The lead alone updates the
+four declared artifacts:
 
 1. **team-practices.md** - five sections matching `memory/team.md`
    (`## Way of Working`, `## Walking Skeleton`, `## Testing Posture`,
    `## Deployment`, `## Code Style`), in team voice. `## Testing Posture`
    MUST include:
-   - `- **Methodology**: tdd | bdd | atdd | test-after | custom`
+   - `- **Methodology**: tdd | bdd | atdd | test-after | custom` (one of those
+     values and nothing else; put the reasons in a
+     `- **Methodology evidence**: ...` bullet)
    - `- **Ordering**: <the affirmed ordering in one explicit sentence>`
 
    Use `custom` whenever the answer mixes cadences (for example, BDD scenarios
@@ -186,7 +197,7 @@ file. The lead alone updates the four declared artifacts:
 After integration, emit `PRACTICES_DISCOVERED`:
 
 ```bash
-bun .aidlc/tools/aidlc-state.ts practices-event \
+{{INVOKE}} engine state practices-event \
   --type discovered \
   --field "Sources Scanned: <list>" \
   --field "Drafts: team-practices.md, discovered-rules.md"
@@ -194,23 +205,24 @@ bun .aidlc/tools/aidlc-state.ts practices-event \
 
 ### Step 6: Learnings + Affirmation Gate
 
-Run the section 13 learnings ritual, then:
+Run the section 13 learnings ritual only when `directive.protocol_modules` lists `learnings`, then follow the affirmation gate below. When the module is absent, go directly to that gate:
 
 1. Open the gate before the question:
-   `bun .aidlc/tools/aidlc-orchestrate.ts report --stage
+   `{{INVOKE}} engine orchestrate report --stage
    practices-discovery --result awaiting-approval`.
 2. Do not log the affirmation gate with `aidlc-log.ts decision` or
    `aidlc-log.ts answer`; the lifecycle `report` calls own its audit events.
 3. Present `team-practices.md` and `discovered-rules.md` with two options:
    **Approve** (promote, then continue to the next stage) and
    **Request Changes**. Write the actual next stage name into the Approve
-   option's description, read from the run-stage directive's `next_stage` field
-   (`Complete workflow` when it is null); never show the field name to the user.
+   option's description, read from the `next_stage` field of the reply that
+   opened the gate, else the run-stage directive's (`Complete workflow` when it
+   is null); never show the field name to the user.
 4. STOP and wait for the human response.
-5. Carry the exact answer only into the matching `report` or promotion path
-   below; never call `aidlc-log.ts answer` for this gate.
-6. On Request Changes, report `--result rejected --user-input "Request Changes"
-   --reason "<feedback>"`,
+5. Read their reply and take the matching `report` or promotion path below;
+   never call `aidlc-log.ts answer` for this gate.
+6. On Request Changes, report `--result rejected --user-input "Request Changes"`
+   (their words are kept with the record; add `--reason` only to say more),
    revise through the lead (and re-run a support only when its evidence must be
    refreshed), then report `--result revised` before re-presenting the gate.
    A rejection invalidates any earlier promotion receipt: the engine refuses
@@ -224,7 +236,7 @@ Run the section 13 learnings ritual, then:
 The orchestrator does not edit active-space memory directly. Run:
 
 ```bash
-bun .aidlc/tools/aidlc-state.ts practices-promote \
+{{INVOKE}} engine state practices-promote \
   --team-practices <record>/inception/practices-discovery/team-practices.md \
   --discovered-rules <record>/inception/practices-discovery/discovered-rules.md \
   --affirming-user "<user>"
@@ -232,8 +244,8 @@ bun .aidlc/tools/aidlc-state.ts practices-promote \
 
 The subcommand resolves the active space and:
 
-- revalidates every declared support contribution and its identity marker
-  before any memory write;
+- revalidates every effective support contribution and its identity marker
+  before any memory write (none when the lead works alone);
 - reads both drafts and
   `aidlc/spaces/<active-space>/memory/{team,project}.md`;
 - replaces the five matching sections in `team.md`;
@@ -252,15 +264,15 @@ After Step 7 prints `{"emitted":"PRACTICES_AFFIRMED",...}` and exits 0:
 
 1. Do not emit `PRACTICES_AFFIRMED` again.
 2. Commit the held approval:
-   `bun .aidlc/tools/aidlc-orchestrate.ts report --stage
+   `{{INVOKE}} engine orchestrate report --stage
    practices-discovery --result approved --user-input "Approve"`.
 
 Use the stage-protocol.md completion template:
 
-- summarize all four artifacts, three contribution files, and both promotion
-  targets;
+- summarize all four artifacts, any contribution files produced (none when the
+  lead works alone), and both promotion targets;
 - use `<record>/inception/practices-discovery/` as the review path;
-- name the next stage from `directive.next_stage`.
+- name the next stage from the gate-opening reply's `next_stage`, else `directive.next_stage`.
 
 ## Sensors
 
@@ -276,9 +288,8 @@ workspace do not count as missing coverage.
 
 ## Learn
 
-Follow stage-protocol.md §13: maintain `<record>/<phase>/<stage>/memory.md`
-under the four standard headings while working; before the approval gate,
-surface candidates with `aidlc-learnings.ts`;
-still ask the mandatory "Anything to add for next time?" question, and persist confirmed selections
-with the tool. The memory file stays in the artefact directory, and the stage
-file remains immutable.
+When `directive.protocol_modules` lists `learnings`, follow
+`stage-protocol-learnings.md`: keep the diary at `directive.memory_path` while
+working, and take the learnings step before the approval gate; that module says
+when it asks the person anything. When the module is absent, skip both the diary
+and the step.

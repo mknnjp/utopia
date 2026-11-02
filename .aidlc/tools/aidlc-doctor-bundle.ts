@@ -55,9 +55,13 @@ import {
   activeSpace,
   auditBlockField,
   auditShardDir,
+  findStageBySlug,
   harnessDir,
-  hooksHealthDir,
+  hooksHealthReadDir,
   isoTimestamp,
+  isPerUnitStage,
+  isStageOrGateEvent,
+  isTeamUnitOwnership,
   listIntentDirs,
   listSpaces,
   parseCheckboxes,
@@ -65,17 +69,18 @@ import {
   readAllAuditShards,
   readRegularFileNoFollowOrThrow,
   recordDir,
-  recoveryFilePath,
   relativeRecordDir,
   runtimeGraphPath,
   stateFilePath,
   stopHookDir,
 } from "./aidlc-lib.ts";
+import { SECRET_SHAPES } from "./aidlc-audit.ts";
+import { aidlcToolInvocation, entrySkillInvocation } from "./aidlc-runtime-paths.ts";
 import { AIDLC_VERSION } from "./aidlc-version.ts";
 
 // The bundle format version — bumped when the report/manifest/evidence SHAPE
 // changes so a maintainer reading an old bundle knows what to expect.
-export const BUNDLE_SCHEMA_VERSION = "1";
+export const BUNDLE_SCHEMA_VERSION = "2";
 
 // Caps. A diagnostic bundle should never approach the size of the thing it is
 // meant to replace; a runaway audit or a pathological graph is truncated with a
@@ -108,13 +113,15 @@ export interface DoctorFinding {
 
 // The legacy pass/label/fix row handleDoctor builds today. Optional id/severity
 // let newer checks preserve structured identity without rewriting older rows.
-// adaptLegacyResult() lifts either shape into a DoctorFinding.
+// adaptLegacyResult() lifts either shape into a DoctorFinding. `severity` also
+// accepts the live report's "warn" vocabulary (DoctorCheck rows from
+// collectDoctorReport); adaptLegacyResult normalizes it to "warning".
 export interface LegacyDoctorResult {
   pass: boolean;
   label: string;
   fix?: string;
   id?: string;
-  severity?: Severity;
+  severity?: Severity | "warn";
 }
 
 // Derive a stable, slug-shaped finding id from a legacy label. The label's
@@ -134,8 +141,10 @@ export function findingIdFromLabel(label: string): string {
 // env or "archive your workspace") is never safe to automate.
 export function adaptLegacyResult(r: LegacyDoctorResult): DoctorFinding {
   const advisory = /\(advisory\)/i.test(r.label);
+  const explicit: Severity | undefined =
+    r.severity === "warn" ? "warning" : r.severity;
   const severity: Severity =
-    r.severity ?? (!r.pass ? "error" : advisory ? "warning" : "info");
+    explicit ?? (!r.pass ? "error" : advisory ? "warning" : "info");
   const remedy = r.fix ?? "";
   return {
     id: r.id ?? findingIdFromLabel(r.label),
@@ -187,14 +196,14 @@ export function newRedactionContext(projectDir: string): RedactionContext {
   };
 }
 
-// Secret-like token shapes. Deliberately broad: AWS keys, bearer/JWT-ish
-// blobs, generic `key=`/`token=`/`secret=`/`password=` assignments, and long
-// hex/base64 runs. A false positive redacts a harmless string (acceptable); a
-// miss leaks a secret (not). Applied to every emitted string.
+// Secret-like token shapes: the shapes AI-DLC's committed record masks
+// (SECRET_SHAPES, aidlc-audit.ts), then this bundle's broader rules, since a
+// bundle leaves the machine: any Bearer run, any value after a secret's name,
+// and long hex/base64 runs. A false positive redacts a harmless string
+// (acceptable); a miss leaks a secret (not). Applied to every emitted string.
 const SECRET_PATTERNS: Array<{ rule: string; re: RegExp; replace: string }> = [
-  { rule: "aws-access-key", re: /\b(AKIA|ASIA)[A-Z0-9]{16}\b/g, replace: "<redacted-aws-key>" },
+  ...SECRET_SHAPES.map(({ rule, re, doctor }) => ({ rule, re, replace: doctor })),
   { rule: "bearer-token", re: /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}\b/g, replace: "Bearer <redacted-token>" },
-  { rule: "jwt", re: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, replace: "<redacted-jwt>" },
   {
     // Matches `password=hunter2`, JSON-shaped `"password": "hunter2"`, AND the
     // JSON-ESCAPED form `{\"password\":\"hunter2\"}` that arises when a secret
@@ -332,12 +341,12 @@ export const UNKNOWN = "unknown";
 export interface StageTimelineEntry {
   slug: string;
   startedRaw: string | typeof UNKNOWN;
-  completedRaw: string | typeof UNKNOWN;
+  completedRaw: string | typeof UNKNOWN; // a skip ends the attempt too, flagged "skipped"
   durationMs: number | null; // null when either endpoint is unknown
   gate: "approved" | "rejected" | "unresolved" | "none";
   revisionCount: number | null;
   gapFromPrevMs: number | null; // time between previous stage's end and this start
-  abnormal: string[]; // e.g. ["long-duration"], ["incomplete"]
+  abnormal: string[]; // e.g. ["long-duration"], ["incomplete"], ["skipped"]
 }
 
 export interface Timeline {
@@ -345,8 +354,10 @@ export interface Timeline {
   workflowStartedRaw: string | typeof UNKNOWN;
   workflowStatus: string; // from state file, or "unknown"
   // True when the LATEST run (the scoped slice, not the whole buffer) recorded a
-  // WORKFLOW_COMPLETED. Rule 3 (state/audit drift) reads this so it never fires
-  // on an old completion left in the buffer by a completed-then-restarted run.
+  // WORKFLOW_COMPLETED that no later STAGE_STARTED reopened. Rule 3 (state/audit
+  // drift) reads this so it never fires on an old completion left in the buffer
+  // by a completed-then-restarted run, nor on finished work a scope change
+  // reopened at the stage it added (#2261).
   workflowCompleted: boolean;
   notes: string[];
 }
@@ -394,8 +405,9 @@ export function reconstructTimeline(audit: string, stateContent: string): Timeli
     byStage.get(slug)!.push(e);
   }
 
-  const checkboxes = stateContent ? parseCheckboxes(stateContent) : [];
-  const checkboxBySlug = new Map(checkboxes.map((c) => [c.slug, c]));
+  // First-wins, the same resolution the drift rule and setCheckbox use: a
+  // repeated slug's FIRST line is the one the engine flips.
+  const checkboxBySlug = stateContent ? checkboxStateBySlug(stateContent) : new Map<string, string>();
 
   // Render in CURRENT-ATTEMPT chronological order, not first-seen order. A stage
   // jumped back to (alpha → beta → alpha) has its latest attempt start LATER
@@ -422,16 +434,18 @@ export function reconstructTimeline(audit: string, stateContent: string): Timeli
     // Pair CHRONOLOGICALLY, scoped to the CURRENT attempt: a stage jumped back
     // to (aidlc-jump re-emits STAGE_STARTED after a completion) must not read as
     // completed with a stale duration. The current attempt begins at the LAST
-    // STAGE_STARTED; it is complete only if a STAGE_COMPLETED follows that start
-    // (events are timestamp-sorted with ledger tie-break above). A completion
-    // that predates the latest start belongs to an earlier attempt and is
-    // ignored, so a re-worked stage correctly reads incomplete/in-progress.
+    // STAGE_STARTED; it ends at the first STAGE_COMPLETED or STAGE_SKIPPED
+    // after that start (events are timestamp-sorted with ledger tie-break
+    // above). An end that predates the latest start belongs to an earlier
+    // attempt and is ignored, so a re-worked stage correctly reads
+    // incomplete/in-progress. A skip ends the attempt because the engine skips
+    // a started stage on the conditional-skip path, and that stage is settled,
+    // not unfinished.
     const startIdx = lastEventIndex(evs, "STAGE_STARTED");
     const started = startIdx >= 0 ? evs[startIdx] : undefined;
+    const isEnd = (e: AuditEvent) => e.event === "STAGE_COMPLETED" || e.event === "STAGE_SKIPPED";
     const completed =
-      startIdx >= 0
-        ? evs.slice(startIdx).find((e) => e.event === "STAGE_COMPLETED")
-        : lastEvent(evs, "STAGE_COMPLETED");
+      startIdx >= 0 ? evs.slice(startIdx).find(isEnd) : evs.findLast(isEnd);
     const startedMs = started?.timestampMs ?? NaN;
     const completedMs = completed?.timestampMs ?? NaN;
 
@@ -443,7 +457,7 @@ export function reconstructTimeline(audit: string, stateContent: string): Timeli
     // Gate: the last gate-resolution event for this stage, else "unresolved"
     // when the stage started but never completed and its checkbox is awaiting
     // approval, else "none".
-    const gate = gateOutcome(evs, checkboxBySlug.get(slug)?.state);
+    const gate = gateOutcome(evs, checkboxBySlug.get(slug));
 
     // Revision count: STAGE_REVISING occurrences, or the state field when the
     // stage is the current one. Null when neither is available.
@@ -456,6 +470,7 @@ export function reconstructTimeline(audit: string, stateContent: string): Timeli
     const abnormal: string[] = [];
     if (durationMs !== null && durationMs > LONG_STAGE_MS) abnormal.push("long-duration");
     if (started && !completed) abnormal.push("incomplete");
+    if (completed?.event === "STAGE_SKIPPED") abnormal.push("skipped");
 
     stages.push({
       slug,
@@ -478,15 +493,12 @@ export function reconstructTimeline(audit: string, stateContent: string): Timeli
     stages,
     workflowStartedRaw: workflowStarted?.timestampRaw ?? UNKNOWN,
     workflowStatus: status,
-    workflowCompleted: events.some((e) => e.event === "WORKFLOW_COMPLETED"),
+    workflowCompleted: lastEventIndex(events, "WORKFLOW_COMPLETED") !== -1 &&
+      lastEventIndex(events, "WORKFLOW_COMPLETED") > lastEventIndex(events, "STAGE_STARTED"),
     notes,
   };
 }
 
-function lastEvent(evs: AuditEvent[], name: string): AuditEvent | undefined {
-  for (let i = evs.length - 1; i >= 0; i--) if (evs[i].event === name) return evs[i];
-  return undefined;
-}
 function lastEventIndex(evs: AuditEvent[], name: string): number {
   for (let i = evs.length - 1; i >= 0; i--) if (evs[i].event === name) return i;
   return -1;
@@ -495,6 +507,79 @@ function lastEventIndex(evs: AuditEvent[], name: string): number {
 function extractStatus(stateContent: string): string {
   const m = stateContent.match(/^- \*\*Status\*\*:\s*(\S+)/m);
   return m ? m[1] : UNKNOWN;
+}
+
+// The state field where `intent archive` keeps the Status it replaced.
+export const ARCHIVED_FROM_FIELD = "Archived From";
+
+// Whether the state agrees with a recorded WORKFLOW_COMPLETED: Completed, or a
+// completed workflow the person archived. Both doctor surfaces read it.
+export function stateShowsCompletion(stateContent: string): boolean {
+  const status = extractStatus(stateContent);
+  if (status === "Completed") return true;
+  const from = stateContent.match(new RegExp(`^- \\*\\*${ARCHIVED_FROM_FIELD}\\*\\*:\\s*(\\S+)`, "m"))?.[1];
+  return status === "Archived" && from === "Completed";
+}
+
+function extractCurrentStage(stateContent: string): string {
+  const m = stateContent.match(/^- \*\*Current Stage\*\*:\s*(\S+)/m);
+  return m ? m[1] : UNKNOWN;
+}
+
+// The checkbox the orchestrator routes on, per stage. First-wins: a state file
+// carrying more than one per-unit Stage Progress block repeats a slug, and
+// setCheckbox flips the FIRST match, so a last-wins map would read a stage the
+// engine considers complete as pending.
+function checkboxStateBySlug(stateContent: string): Map<string, string> {
+  const bySlug = new Map<string, string>();
+  for (const line of parseCheckboxes(stateContent)) {
+    if (!bySlug.has(line.slug)) bySlug.set(line.slug, line.state);
+  }
+  return bySlug;
+}
+
+// Stages the ledger says are underway or done in the CURRENT attempt.
+// Scoped from the latest WORKFLOW_STARTED *or* STAGE_JUMPED: a backward jump
+// resets the downstream checkboxes to pending on purpose while their earlier
+// STAGE_STARTED/STAGE_COMPLETED rows stay in the buffer, so flooring only at
+// WORKFLOW_STARTED would read a routine jump as drift. Isolated `--single`
+// runs are dropped for the same reason they are dropped everywhere else: they
+// deliberately leave the main workflow's checkboxes untouched.
+export function ledgerStageActivity(audit: string): { started: Set<string>; completed: Set<string> } {
+  const events = parseAuditEvents(audit);
+  let floor = 0;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].event === "WORKFLOW_STARTED" || events[i].event === "STAGE_JUMPED") {
+      floor = i;
+      break;
+    }
+  }
+  const started = new Set<string>();
+  const completed = new Set<string>();
+  for (const event of events.slice(floor)) {
+    if (event.event !== "STAGE_STARTED" && event.event !== "STAGE_COMPLETED") continue;
+    if ((auditBlockField(event.block, "Workflow") ?? "").startsWith("single-stage:")) continue;
+    const slug = auditBlockField(event.block, "Stage") ?? auditBlockField(event.block, "Slug");
+    if (!slug) continue;
+    (event.event === "STAGE_STARTED" ? started : completed).add(slug);
+  }
+  return { started, completed };
+}
+
+// Under team Unit Ownership a per-unit Construction checkbox is a derived
+// projection of the Unit Progress grid, not a record of the stage: each `next`
+// runs refresh-unit-progress, which rewrites it from unit evidence and reads
+// `[ ]` until some unit checkpoints, even after the stage started. A pending
+// box there is routine, and a hand edit is undone by the next refresh.
+export function checkboxIsUnitProjection(stateContent: string, slug: string): boolean {
+  return isTeamUnitOwnership(stateContent) && isPerUnitStage(findStageBySlug(slug) ?? { slug });
+}
+
+// The exact Stage Progress line edit that brings a pending checkbox back in
+// line with the audit: `[x]` for a stage the audit completed, `[-]` for one it
+// only started.
+function checkboxEdit(slug: string, target: "started" | "completed"): string {
+  return `change \`- [ ] ${slug}\` to \`- [${target === "completed" ? "x" : "-"}] ${slug}\``;
 }
 
 // Gate outcome for a stage: the LATEST gate event wins, honouring order. `evs`
@@ -512,6 +597,9 @@ function gateOutcome(
     if (e.event === "GATE_APPROVED") latest = "approved";
     else if (e.event === "GATE_REJECTED") latest = "rejected";
     else if (e.event === "STAGE_AWAITING_APPROVAL") latest = "awaiting";
+    // A stage skipped while its gate was open (a forward jump or a scope
+    // change) has no gate left to answer.
+    else if (e.event === "STAGE_SKIPPED" && latest === "awaiting") latest = null;
   }
   if (latest === "approved") return "approved";
   if (latest === "rejected") return "rejected";
@@ -561,12 +649,11 @@ export interface HookHealthSnapshot {
 export interface MarkerSnapshot {
   planExists: boolean;
   planParseable: boolean | null; // null when absent
-  recoveryExists: boolean;
   stopHookDirExists: boolean;
 }
 
 // Freshness window past which a heartbeat is "frozen" relative to the newest
-// recorded audit activity. A hook that has not fired since well before the last
+// recorded work (newestWorkAuditMs). A hook that has not fired since well before the last
 // stage transition is the cold-hook signal (#571's rebuild-stage-graph case).
 export const FROZEN_HEARTBEAT_MS = 24 * 60 * 60 * 1000;
 
@@ -584,6 +671,7 @@ export function runDiagnosis(input: DiagnosisInput): DoctorFinding[] {
     authoredInputsNewestMtimeMs,
     markers,
     stateContent,
+    audit,
   } = input;
 
   // Rule 1 — open / unresolved gates. A stage whose gate never resolved is the
@@ -601,7 +689,7 @@ export function runDiagnosis(input: DiagnosisInput): DoctorFinding[] {
         completed: s.completedRaw,
       },
       remedy:
-        "The workflow is waiting at an approval gate. Resolve it with `/aidlc` " +
+        `The workflow is waiting at an approval gate. Resolve it with \`${entrySkillInvocation()}\` ` +
         "(answer the open question / approve or reject the stage), then continue.",
       safeToAutomate: false,
     });
@@ -676,7 +764,7 @@ export function runDiagnosis(input: DiagnosisInput): DoctorFinding[] {
   // reconstructTimeline's latest-run scoping guards against).
   if (timeline.workflowCompleted && stateContent) {
     const status = extractStatus(stateContent);
-    if (status !== "Completed" && status !== UNKNOWN) {
+    if (status !== UNKNOWN && !stateShowsCompletion(stateContent)) {
       findings.push({
         id: "state-audit-drift",
         severity: "error",
@@ -685,6 +773,69 @@ export function runDiagnosis(input: DiagnosisInput): DoctorFinding[] {
         remedy:
           "A state write was lost after the audit event landed. Set Status=Completed " +
           "in aidlc-state.md, or restart the workflow if the state is otherwise inconsistent.",
+        safeToAutomate: false,
+      });
+    }
+  }
+
+  // Rule 3b — per-stage state / audit divergence. Rule 3 above compares exactly
+  // one pair (WORKFLOW_COMPLETED vs Status); nothing compared the per-stage
+  // checkboxes, which are what the orchestrator routes on and what `--status`
+  // and the statusline render. A lost state write therefore left the ledger and
+  // every status surface disagreeing in silence, and `report` refused the stage
+  // as "still pending" with no diagnostic naming the cause (#1190).
+  if (stateContent) {
+    const boxes = checkboxStateBySlug(stateContent);
+    const ledger = ledgerStageActivity(audit);
+    const uncheckedRecord = (slug: string): boolean =>
+      boxes.get(slug) === "pending" && !checkboxIsUnitProjection(stateContent, slug);
+    const completedButPending = [...ledger.completed].filter(uncheckedRecord);
+    const startedButPending = [...ledger.started].filter(
+      (slug) => uncheckedRecord(slug) && !ledger.completed.has(slug),
+    );
+    const named = [...completedButPending, ...startedButPending].sort();
+    if (named.length > 0) {
+      const outcome = (slug: string): "started" | "completed" =>
+        ledger.completed.has(slug) ? "completed" : "started";
+      findings.push({
+        id: "stage-state-audit-drift",
+        severity: "warning",
+        summary:
+          named.length === 1
+            ? `aidlc-state.md shows ${named[0]} as not started, but the audit log shows it ${outcome(named[0])}.`
+            : `aidlc-state.md shows ${named.length} stages as not started, but the audit log shows them ` +
+              `underway or done: ${named.map((slug) => `${slug} (${outcome(slug)})`).join(", ")}.`,
+        evidence: { completedButPending, startedButPending },
+        remedy:
+          "aidlc-state.md most likely missed an update after the audit was written. Until the two " +
+          "agree, the workflow can refuse to finish a stage it already ran, and the status view and " +
+          "statusline show less progress than was made. To fix it, edit aidlc-state.md: " +
+          `${named.map((slug) => checkboxEdit(slug, outcome(slug))).join("; ")}. Then continue the workflow.`,
+        safeToAutomate: false,
+      });
+    }
+
+    // The same divergence, without needing the ledger: Current Stage naming a
+    // stage whose checkbox never left pending is the exact state `report` keys
+    // on when it refuses. A hand-corrected state file reaches this shape with
+    // no STAGE_STARTED of its own, so the ledger comparison above stays silent.
+    // When that comparison already named the stage, one cause stays one warning.
+    // The one state verb that writes this shape by design, `finalize` (cursor
+    // moved, next stage left `[ ]`), has no engine caller and the
+    // state-transition guard refuses it as a direct call, so a hit here is not
+    // a routine pause between stages unless a human lowered that guard.
+    const currentStage = extractCurrentStage(stateContent);
+    if (currentStage !== UNKNOWN && uncheckedRecord(currentStage) && !named.includes(currentStage)) {
+      findings.push({
+        id: "current-stage-not-started",
+        severity: "warning",
+        summary: `aidlc-state.md names ${currentStage} as the current stage but shows it as not started.`,
+        evidence: { currentStage, checkbox: "pending" },
+        remedy:
+          `The workflow refuses to finish ${currentStage} while it shows as not started. If ` +
+          `${currentStage} is the stage you are working on, edit aidlc-state.md: ` +
+          `${checkboxEdit(currentStage, "started")}. Otherwise set Current Stage to the stage ` +
+          "the workflow is actually on.",
         safeToAutomate: false,
       });
     }
@@ -708,9 +859,10 @@ export function runDiagnosis(input: DiagnosisInput): DoctorFinding[] {
         authoredInputsNewestMtime: new Date(authoredInputsNewestMtimeMs).toISOString(),
       },
       remedy:
-        "The compiled runtime graph is out of date. Re-run `bun " +
-        "<harness>/tools/aidlc-graph.ts compile`; if this recurs, the " +
-        "rebuild-stage-graph hook may not be firing on this harness (check hook heartbeats).",
+        `The compiled runtime graph is out of date. Re-run \`${
+          aidlcToolInvocation("runtime")
+        } compile\`. If it goes out of date again, AI-DLC's hooks are not running here: ` +
+        "doctor's hooks check says what to do.",
       safeToAutomate: true,
     });
   } else if (
@@ -728,14 +880,14 @@ export function runDiagnosis(input: DiagnosisInput): DoctorFinding[] {
       summary: "runtime-graph.json is missing for the active workflow.",
       evidence: { runtimeGraphExists: false },
       remedy:
-        "No compiled runtime graph. Re-run `bun <harness>/tools/aidlc-graph.ts compile`. " +
-        "If it never appears, the rebuild-stage-graph hook is not firing on this harness.",
+        `No compiled runtime graph. Re-run \`${aidlcToolInvocation("runtime")} compile\`. ` +
+        "If it goes missing again, AI-DLC's hooks are not running here: doctor's hooks check says what to do.",
       safeToAutomate: true,
     });
   }
 
-  // Rule 5 — frozen / missing hook heartbeats. A registered hook that has not
-  // fired since well before the latest audit activity is cold.
+  // Rule 5 - frozen / missing hook heartbeats. A registered hook that has not
+  // fired since well before the latest recorded work is cold.
   if (!hooksHealth.dirExists) {
     findings.push({
       id: "hooks-never-fired",
@@ -754,8 +906,10 @@ export function runDiagnosis(input: DiagnosisInput): DoctorFinding[] {
           summary: `Hook "${hb.hook}" has not fired in over ${Math.floor(hb.ageMs / (60 * 60 * 1000))}h.`,
           evidence: { hook: hb.hook, lastFired: hb.timestampRaw, ageMs: hb.ageMs },
           remedy:
-            "A cold hook silently skips its side effects (audit, sensors, runtime " +
-            "compile). Verify the hook is wired and firing on this harness.",
+            "A hook that last fired long ago is expected on an intent nobody is working on, " +
+            "but work on this intent was recorded more than a day after this hook last fired. " +
+            "A hook that does not run skips its side effects (audit, sensors, runtime compile): " +
+            "check the hook is wired and firing on this harness.",
           safeToAutomate: true,
         });
       }
@@ -780,11 +934,11 @@ export function runDiagnosis(input: DiagnosisInput): DoctorFinding[] {
     findings.push({
       id: "plan-marker-malformed",
       severity: "error",
-      summary: ".aidlc-plan.json is present but not parseable.",
+      summary: ".aidlc-engine/plan.json is present but not parseable.",
       evidence: { planExists: true, planParseable: false },
       remedy:
-        "The resolve output is corrupt. Re-run the resolve step (`/aidlc` will " +
-        "recompute the plan), or remove .aidlc-plan.json to force a fresh resolve.",
+        `The resolve output is corrupt. Re-run the resolve step (\`${entrySkillInvocation()}\` will ` +
+        "recompute the plan), or remove .aidlc-engine/plan.json to force a fresh resolve.",
       safeToAutomate: false,
     });
   }
@@ -874,6 +1028,7 @@ const STATE_ALLOWLIST = [
   "Parked",
   "Parked At Stage",
   "Active Unit",
+  "Unit Stage",
   "Unit State",
   "Unit Pause Reason",
   "Unit Next Action",
@@ -1451,13 +1606,13 @@ function newestStageSourceMtime(projectDir: string): number | null {
 }
 
 function readHookHealth(projectDir: string, audit: string): HookHealthSnapshot {
-  const dir = hooksHealthDir(projectDir);
+  const dir = hooksHealthReadDir(projectDir);
   const dirExists = existsSync(dir);
   const heartbeats: HookHealthSnapshot["heartbeats"] = [];
   const degradedDrops: HookHealthSnapshot["degradedDrops"] = [];
-  // Age is measured against the newest audit timestamp (the run's own clock),
-  // not wall-clock — a bundle produced days later must not flag every hook.
-  const latestAudit = newestAuditMs(audit);
+  // Age is measured against the newest recorded work (the run's own clock),
+  // not wall-clock: a bundle produced days later must not flag every hook.
+  const latestAudit = newestWorkAuditMs(audit);
   if (dirExists) {
     let files: string[] = [];
     try {
@@ -1498,16 +1653,20 @@ function readMarkers(projectDir: string): NormalizedEvidence["markers"] {
   return {
     planExists,
     planParseable,
-    recoveryExists: existsSync(recoveryFilePath(projectDir)),
     stopHookDirExists: existsSync(stopDir),
     turnCounter: existsSync(turnCounterPath) ? safeRead(turnCounterPath).trim() : null,
     readonlyLatch: existsSync(latchPath),
   };
 }
 
-function newestAuditMs(audit: string): number | null {
+// The newest stage or gate row. Opening a chat to run doctor records its
+// session start and the person's prompt, and doctor records its own rows,
+// before the analysis reads the audit: counting any of them would date every
+// idle intent's newest work to now and read all of its hooks as frozen.
+function newestWorkAuditMs(audit: string): number | null {
   let newest: number | null = null;
   for (const e of parseAuditEvents(audit)) {
+    if (!isStageOrGateEvent(e.event)) continue;
     if (Number.isFinite(e.timestampMs) && (newest === null || e.timestampMs > newest)) {
       newest = e.timestampMs;
     }

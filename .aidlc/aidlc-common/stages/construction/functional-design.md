@@ -30,6 +30,8 @@ consumes:
     required: true
   - artifact: unit-of-work-story-map
     required: false
+  - artifact: stories
+    required: false
   - artifact: requirements
     required: true
   - artifact: components
@@ -52,7 +54,7 @@ scopes:
   - refactor
   - classic
   - workshop
-inputs: unit-of-work.md, unit-of-work-story-map.md, requirements.md, domain-design components.md, contract-design contract-summary.md (if produced)
+inputs: unit-of-work.md, unit-of-work-story-map.md, user-stories stories.md (if produced), requirements.md, domain-design components.md, contract-design contract-summary.md (if produced)
 outputs: "entities.md, rules.md, functional-spec.md, traceability.json, CONDITIONAL: frontend-components.md (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (untagged unit: all). entities.md and rules.md each carry a fenced ```yaml source-of-truth block; functional-spec.md is the source of truth for workflows and state machines and carries derived ER-diagram and rules-summary views."
 ---
 
@@ -82,9 +84,9 @@ Execute all steps sequentially as written.
 
 ### Step 1: Read Unit Context
 
-Read the unit definition from `<record>/inception/units-generation/unit-of-work.md` and assigned stories from `<record>/inception/units-generation/unit-of-work-story-map.md` (if they exist). Read `<record>/inception/requirements-analysis/requirements.md` (if exists), the component catalogue from `<record>/inception/domain-design/components.md` (if it exists), and the contracts for this unit's boundaries from `<record>/inception/contract-design/contract-summary.md` (if it exists).
+Read the unit definition from `<record>/inception/units-generation/unit-of-work.md` and assigned stories from `<record>/inception/units-generation/unit-of-work-story-map.md` (if they exist), and the acceptance criteria (`ACx.y.z`) of those stories from `<record>/inception/user-stories/stories.md` (if it exists). Read `<record>/inception/requirements-analysis/requirements.md` (if exists), the component catalogue from `<record>/inception/domain-design/components.md` (if it exists), and the contracts for this unit's boundaries from `<record>/inception/contract-design/contract-summary.md` (if it exists).
 
-Incremental scopes (refactor) deliberately skip units-generation and domain-design, so those inputs are absent by design there. When an input is absent, work from what the scope does provide — the requirements and, on a brownfield workspace, the reverse-engineered code knowledge base at `aidlc/spaces/<active-space>/codekb/<repo>/` (the directory `codekb-path --repo <repo>` prints) — and treat the existing code structure as the de-facto domain design. Never invent the content of a missing artifact.
+Incremental scopes (refactor) deliberately skip user-stories, units-generation and domain-design, so those inputs are absent by design there. When an input is absent, work from what the scope does provide — the requirements and, on a brownfield workspace, the reverse-engineered code knowledge base at `aidlc/spaces/<active-space>/codekb/<repo>/` (the directory `codekb-path --repo <repo>` prints) — and treat the existing code structure as the de-facto domain design. Never invent the content of a missing artifact.
 
 ### Step 2: Create Functional Design Plan
 
@@ -96,7 +98,7 @@ Focus areas:
 - Business rules, constraints, and validation logic
 - Data flow and transformations
 - Integration points with other units or external systems
-- Error handling and edge cases
+- Error handling and edge cases (at Standard and Comprehensive depth, sweep each component against `{{HARNESS_DIR}}/knowledge/aidlc-product-agent/corner-checklist.md`; corners the requirements already settled carry forward, and only open corners that need the user's judgement become questions)
 - Frontend Components (component hierarchy, props/state, interaction flows, form validation)
 - Business Scenarios (end-to-end user journeys, happy/unhappy paths, concurrency edge cases)
 
@@ -114,25 +116,40 @@ If ANY ambiguity found: create follow-up questions and resolve before proceeding
 Generate the following in `<record>/construction/{unit-name}/functional-design/`. Technology-agnostic — implementable in any language. No code, no SQL, no framework references.
 
 - **entities.md**: The entity model. Carries a fenced ```yaml source-of-truth block listing each entity with its description, attributes (name, logical type, required/unique, references, allowed values, defaults, min/max, constraints), entity-level constraints, and relationships (cardinality + direction). Follow the block with a short human-readable summary of the entity set.
-- **rules.md**: The business rules. Carries a fenced ```yaml source-of-truth block listing each numbered rule (`id: BRx.y`, e.g. `BR1.1` — the `BR{group}.{seq}` format the traceability sensor recognizes) with its statement, category (validation/authorization/constraint/calculation/policy), what it applies to, trigger, logic (IF…THEN in plain language), violation behaviour, and source (FR-n/NFR-n). Follow the block with a short human-readable rules summary table.
-- **functional-spec.md**: The behavioural specification. It is the **source of truth for workflows and state machines** — the numbered step sequences a use case follows and the lifecycle-entity state transitions — because `entities.md` (data shape) and `rules.md` (decision logic) do not capture ordered behaviour or transitions. It also carries two **derived** views for readability: an entity-relationship `mermaid` diagram (derived from `entities.md` — the YAML there is source of truth) and a rules summary (derived from `rules.md`). For a UI-only unit that produces `functional-spec.md` without `entities.md`/`rules.md`, this file is self-contained: it authoritatively specifies the interaction workflows and screen/state transitions from the unit definition and requirements, with no entity/rule dependency.
+- **rules.md**: The business rules. Carries a fenced ```yaml source-of-truth block listing each numbered rule (`id: BRx.y`, e.g. `BR1.1` — the `BR{group}.{seq}` format the traceability sensor recognizes) with its statement, category (validation/authorization/constraint/calculation/policy), what it applies to, trigger, logic (IF…THEN in plain language), violation behaviour, and source (FR{n}/NFR{n}). Follow the block with a short human-readable rules summary table.
+- **functional-spec.md**: The behavioural specification. It is the **source of truth for workflows and state machines** — the numbered step sequences a use case follows and the lifecycle-entity state transitions — because `entities.md` (data shape) and `rules.md` (decision logic) do not capture ordered behaviour or transitions. It also carries two **derived** views for readability: an entity-relationship `mermaid` diagram (derived from `entities.md` — the YAML there is source of truth) and a rules summary (derived from `rules.md`). For a UI-only unit that produces `functional-spec.md` without `entities.md`/`rules.md`, this file is self-contained: it authoritatively specifies the interaction workflows and screen/state transitions from the unit definition and requirements, with no entity/rule dependency. When `stories.md` exists, name it beside the stories (`USx.y`) this Unit implements.
 - **frontend-components.md** (CONDITIONAL — only if unit includes frontend/UI): Component hierarchy, props/state design, interaction flows, form validation rules, API integration points
 
 Create
-`<record>/construction/{unit-name}/functional-design/traceability.json`.
-Enumerate every acceptance criterion assigned to this Unit. Each `OK` target
-must name one or more `BRx.y` IDs that exist in `rules.md`. Use the
-optional `reverse` array to explain rules that intentionally have no AC; any
-unexplained rule is mechanically derived as an orphan:
+`<record>/construction/{unit-name}/functional-design/traceability.json` by running
+`{{INVOKE}} engine sensor-traceability --stage functional-design --output-path <that path> --write-upstream`:
+it lists in `upstream_ids` every ID this Unit answers for, each with a `GAP` row:
+
+- With both `stories.md` and `unit-of-work-story-map.md`: every `ACx.y.z` of
+  every story the story map assigns to this Unit, including the criteria of a
+  shared story that another Unit delivers.
+- Otherwise, with `unit-of-work-story-map.md`: every `FR` on this Unit's rows.
+- Otherwise: every `FR` Requirements Analysis recorded.
+
+A requirement with sub-requirements is traced through its `FR{n}.{m}` IDs and
+needs no row of its own.
+
+Set each ID's `coverage` row: `OK` with a `target` naming one or more
+`BRx.y` IDs that exist in `rules.md`; `N/A` with the reason as its `target`
+(for example `delivered by u2-profile`); `Deferred` with the later stage that
+covers it as its `target`; or `GAP` while this design does not cover it. Use
+the optional `reverse` array to explain rules that intentionally have no
+upstream ID; any unexplained rule is mechanically derived as an orphan:
 
 ```json
 {
   "stage": "functional-design",
   "unit": "u1-auth",
-  "upstream_ids": ["AC1.1.1", "AC1.1.2"],
+  "upstream_ids": ["AC1.1.1", "AC1.1.2", "AC1.2.1"],
   "coverage": [
     { "id": "AC1.1.1", "status": "OK", "target": "BR1.1" },
-    { "id": "AC1.1.2", "status": "GAP" }
+    { "id": "AC1.1.2", "status": "GAP" },
+    { "id": "AC1.2.1", "status": "N/A", "target": "delivered by u2-profile" }
   ],
   "reverse": [
     { "id": "BR1.3", "status": "N/A", "target": "technical validation rule" }
@@ -143,7 +160,7 @@ unexplained rule is mechanically derived as an orphan:
 ### Step 5: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .aidlc/tools/aidlc-orchestrate.ts report --stage functional-design --result <outcome>`.
+`{{INVOKE}} engine orchestrate report --stage functional-design --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 ### Step 6: Completion
@@ -168,17 +185,17 @@ This stage's outputs are markdown design artefacts under `<record>/construction/
 
 Imports: `required-sections`, `upstream-coverage`, `linter`, `type-check`, `traceability`.
 
-Upstream targets: `unit-of-work`, `unit-of-work-story-map`, `requirements`, `components`, `contract-summary`.
+Upstream targets: `unit-of-work`, `unit-of-work-story-map`, `stories`, `requirements`, `components`, `contract-summary`.
 
 `linter` and `type-check` inspect matching TypeScript/JavaScript snippets.
-`traceability` validates per-Unit acceptance-criteria coverage, checks
-`BRx.y` targets against `rules.md`, and finds unexplained business-rule orphans.
+`traceability` verifies that every acceptance criterion of the stories mapped
+to this Unit, or every fallback `FR`, is declared and covered; checks `BRx.y`
+targets against `rules.md`; and finds unexplained business-rule orphans.
 
 ## Learn
 
-Follow stage-protocol.md §13: maintain `<record>/<phase>/<stage>/memory.md`
-under the four standard headings while working; before the approval gate,
-surface candidates with `aidlc-learnings.ts`;
-still ask the mandatory "Anything to add for next time?" question, and persist confirmed selections
-with the tool. The memory file stays in the artefact directory, and the stage
-file remains immutable.
+When `directive.protocol_modules` lists `learnings`, follow
+`stage-protocol-learnings.md`: keep the diary at `directive.memory_path` while
+working, and take the learnings step before the approval gate; that module says
+when it asks the person anything. When the module is absent, skip both the diary
+and the step.

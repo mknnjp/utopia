@@ -20,7 +20,7 @@ Every file uses stable IDs:
 | `NFR{n}` | Inception non-functional requirement | `NFR2` |
 | `US{n}.{m}` | User story | `US1.3` |
 | `AC{n}.{m}.{seq}` | Acceptance criterion | `AC1.3.2` |
-| `U{n}` / `u{n}-{description}` | Unit ID / construction directory | `U1`, `u1-auth` |
+| `U{n}` / `u{n}-{description}` | Unit ID / Unit name (its construction directory) | `U1`, `u1-auth` |
 | `BR{group}.{seq}` | Business rule | `BR1.1` |
 | `NFRx.y` | Detailed NFR requirement | `NFR2.1` |
 
@@ -41,7 +41,11 @@ The JSON shape is:
 ```
 
 Valid statuses are `OK`, `GAP`, `ORPHAN`, `Deferred`, and `N/A`. `OK`,
-`Deferred`, and `N/A` require a non-empty target or justification. The sensor
+`Deferred`, and `N/A` require a non-empty target or justification. Every
+upstream ID goes in `upstream_ids` and `coverage`, `N/A` there with the reason
+it does not apply as its target; `reverse` lists only what the stage produced
+that traces to nothing upstream. A requirement with sub-requirements is traced
+through its `FR{n}.{m}` IDs and needs no row of its own. The sensor
 cross-checks upstream IDs from source artifacts, verifies deterministic targets
 where possible, and derives functional-design business-rule orphans.
 

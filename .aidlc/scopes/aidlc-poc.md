@@ -9,6 +9,12 @@ keywords:
 description: Prove feasibility fast
 skeleton: on
 review_cap: advisory
+guard_policy: off
+sensors: on
+learnings: on
+summary_confirmation: on
+plan_approval: off
+collaborators: off
 ---
 
 # poc scope
@@ -17,6 +23,13 @@ Minimal depth aimed at proving feasibility fast. Almost everything except
 the bare path to running code is skipped: capture the intent, reverse-
 engineer any existing code, pull the requirements, then generate and test.
 No design ceremony, no operations, no delivery planning.
+
+Guard Policy defaults to off: changed inputs are recorded and announced, the spike keeps moving, and plan approval, review freeze, state transition, and reviewer read scope are lowered for undirected work. Human presence stays up.
+
+Plan approval is off: once the code plan is written you see one line naming it,
+code generation starts, and the line says you can ask to go over the plan at
+any time. You can also ask to see a plan before it is built, or to be asked about
+every plan.
 
 ## Why these stages, why skip those
 

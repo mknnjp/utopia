@@ -9,10 +9,8 @@ description: >
   Leads Rough Mockups and Refined Mockups stages. Supports Domain Design, and serves as a
   dispatched collaborator in the User Stories mob ensemble.
 disallowedTools: Task
+tier: judgment
 ---
-<!-- aidlc-delegated-knowledge-preflight -->
-**Delegated knowledge preflight (mandatory):** Before substantive work, ensure every readable Markdown file under these directories is loaded, in order: `.aidlc/knowledge/aidlc-shared/`, `.aidlc/knowledge/aidlc-design-agent/`, `aidlc/spaces/<active-space>/knowledge/aidlc-shared/`, then `aidlc/spaces/<active-space>/knowledge/aidlc-design-agent/`. A native resource preload satisfies this requirement; otherwise read the files now. The dispatch brief supplies rules and artifact paths separately.
-
 
 # Design Agent
 
@@ -56,7 +54,7 @@ You are a senior UX/UI designer specializing in wireframing, interaction design,
 
 ## Memory Focus
 
-`aidlc/spaces/default/memory/{org,team,project}.md` — active-space guardrails and affirmed practices (read per `.aidlc/knowledge/aidlc-shared/rules-reading.md`). Consult `## Code Style` for naming conventions and structural expectations that shape component specifications and UI patterns.
+`aidlc/spaces/<active-space>/memory/{org,team,project}.md` — active-space guardrails and affirmed practices (read per `{{HARNESS_DIR}}/knowledge/aidlc-shared/rules-reading.md`). Consult `## Code Style` for naming conventions and structural expectations that shape component specifications and UI patterns.
 
 ## Key Principles
 

@@ -68,7 +68,15 @@ Create `<record>/inception/units-generation/units-generation-questions.md` with 
 - Integration points and contracts between units (APIs, shared data, events)
 - Deployment model (monolithic deploy, independent deploy, hybrid)
 
-NOTE: Do NOT ask about implementation order priorities (value-first, risk-first, walking-skeleton-first). Those are economic-sequencing decisions that belong to Stage 2.9 Delivery Planning.
+When skeleton-on is applicable, shape the first Unit in the resolved DAG order
+as the smallest working integrated slice, with enough real implementation to
+exercise its integration path end to end. Decompose subsequent capabilities as
+later Units; avoid making the first Unit only an isolated design document or
+layer that cannot run without later Units. Respect genuine dependencies and
+architectural boundaries; resolve an incompatible decomposition with the human
+before approving it. Delivery Planning confirms the expected demo and real
+integrated check. Economic priorities (value-first or risk-first for the remaining
+work) still belong to Delivery Planning; do not duplicate that interview here.
 
 ### Step 3: Collect and Analyze Answers
 
@@ -93,7 +101,7 @@ Based on the approved plan, generate 4 artifacts in `<record>/inception/units-ge
 
 **unit-of-work.md:**
 - Unit definitions (name, description, boundaries)
-- A stable short ID `U{n}` for every Unit and its construction directory name `u{n}-{description}`. Include both in a table (`Unit ID` and `Directory`) so downstream tools can join story-map IDs to filesystem paths.
+- A stable short ID `U{n}` for every Unit and its directory. The directory is the Unit's name from the edge block below: the engine writes the Unit's construction artifacts under `construction/<unit-name>/`, so name each Unit `u{n}-{description}` and the ID reads off its directory. Include both in a table (`Unit ID` and `Directory`) so downstream tools can join story-map IDs to filesystem paths.
 - Unit responsibilities (what each unit owns and delivers)
 - Deployment model per unit (standalone, shared, embedded)
 - Relative complexity estimate per unit (S/M/L/XL)
@@ -102,9 +110,11 @@ Based on the approved plan, generate 4 artifacts in `<record>/inception/units-ge
 
 **unit-of-work-dependency.md:**
 - Dependency DAG between units (directed edges: "A depends on B"). Must be cycle-free.
+  A Unit depends on every Unit whose code its own code or tests need to build or pass. Units with no edge between them may be built at the same time, each in its own copy of the project with none of the others' work in it, so each Unit's code and tests must pass with its own code, the Units it depends on, and the project as it stands.
 - Integration points between units (APIs, shared data, events)
 - Parallel development opportunities (sets of units with no dependency between them — multiple valid topological orderings exist)
-- A REQUIRED fenced `yaml` edge block (below) — the machine-readable mirror of the prose DAG. The downstream batch fan-out is computed from this block, not the prose, so it must be present, well-formed, and cycle-free. The `required-sections` sensor checks it at this stage's gate.
+- When skeleton-on applies, identify the first resolved DAG Unit as the integrated slice and explain how it can run before later Units. A marker only in `bolt-plan.md` cannot change the runtime DAG order.
+- A REQUIRED fenced `yaml` edge block (below) — the machine-readable mirror of the prose DAG. The downstream batch fan-out is computed from this block, not the prose, so it must be present, well-formed, and cycle-free. The engine reads it before this stage's review and before its gate, and when it cannot, it hands back the exact defect to fix first; the `required-sections` sensor also checks it at the gate.
 
 The fenced block lists every unit with its direct dependencies (the unit names it depends on) and, optionally, each unit's `kind`. Independent units carry `depends_on: []`. Author new Unit names as lowercase path-segment identifiers: a lowercase letter followed by lowercase letters, digits, or hyphens, with a maximum of 64 characters. The runtime also preserves safe legacy single-segment names beginning with a digit or containing uppercase letters, underscores, or dots; autonomous swarms map those names to deterministic internal Bolt slugs while retaining the original Unit identity in directives and audit records. Do not rename an in-flight legacy Unit merely to normalize its spelling. Name each unit exactly once; every name in a `depends_on` list must be a declared unit; no unit may depend on itself; the edges must be acyclic. Each `kind:`, when present, must be one of `service | spec | ui | packaging | library` (an invalid value fails the edge-block sensor at this gate); omit it to keep the unit on the full construction design-artifact matrix:
 
@@ -121,15 +131,17 @@ units:
 NOTE: This artifact describes topology only. It does NOT pick a single "recommended build order" or identify a critical path — those are economic decisions made in 2.9 (Delivery Planning) using this DAG as input.
 
 **unit-of-work-story-map.md:**
-- Each user story mapped by `USx.y` ID to its implementing Unit `U{n}` ID and directory name
-- Stories that span multiple units (cross-cutting concerns)
-- Story implementation order within each unit
-- Coverage verification: every story assigned, every unit has stories
+- One row per upstream item, keyed the way the traceability enumeration below is keyed. When `stories.md` is produced, key every row by `USx.y`; only `USx.y` rows are read. Otherwise key rows by `FR`, and optionally add an `NFR` row for any NFR this scope also traces; a requirement with sub-requirements is traced through its `FR{n}.{m}` IDs, so key its rows by those. Each row names the implementing Unit `U{n}` ID and directory name, for example `| US1.1 | U1 | u1-ledger |`; separate several Units in one cell with `;`. Every Unit a row names traces all of that row's acceptance criteria in its Functional Design, so name a Unit on a row only when it implements part of that item
+- Rows that span multiple units (cross-cutting concerns)
+- Implementation order within each unit
+- Coverage verification: every enumerated ID assigned, every unit has rows
 
-Create `<record>/inception/units-generation/traceability.json`. When
-`stories.md` exists, enumerate every `USx.y`; otherwise enumerate every `FR`.
-Each `OK` target is one Unit ID or construction directory that also appears on
-the story's row in `unit-of-work-story-map.md`:
+Create `<record>/inception/units-generation/traceability.json` by running
+`{{INVOKE}} engine sensor-traceability --stage units-generation --output-path <that path> --write-upstream`:
+when `stories.md` exists it lists every `USx.y`, otherwise every `FR`
+Requirements Analysis recorded, a requirement with sub-requirements through its `FR{n}.{m}` IDs,
+each with a `GAP` row. Set each row's `status` and `target`: each `OK` target is one Unit ID or construction directory that also appears on
+that ID's row in `unit-of-work-story-map.md`:
 
 ```json
 {
@@ -145,7 +157,7 @@ the story's row in `unit-of-work-story-map.md`:
 ### Step 6: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .aidlc/tools/aidlc-orchestrate.ts report --stage units-generation --result <outcome>`.
+`{{INVOKE}} engine orchestrate report --stage units-generation --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 ### Step 7: Present Completion & Request Approval
@@ -153,7 +165,7 @@ That `report` call owns every lifecycle transition and advancement; never perfor
 Use stage-protocol.md completion template with completion emoji: :wrench:
 - Summary of units defined (with each unit's kind), dependencies mapped, stories assigned
 - Review path: `<record>/inception/units-generation/`
-- Structured approval question with options: Approve (continue to Construction phase) / Request Changes
+- Structured approval question with options: Approve (Continue to `<directive.next_stage>`, the stage the engine names) / Request Changes
 
 ## Sensors
 
@@ -165,14 +177,14 @@ Upstream targets: `components`, `decisions`, `requirements`, `stories`.
 
 For `unit-of-work-dependency.md`, `required-sections` also requires a
 well-formed, cycle-free fenced `yaml` edge block. `traceability` owns
-`traceability.json`, derives the Unit set, and verifies every story maps to
-its declared target Unit.
+`traceability.json`, derives the Unit set, and verifies every story, or every
+fallback `FR` when `stories.md` is not produced, maps to its declared target
+Unit.
 
 ## Learn
 
-Follow stage-protocol.md §13: maintain `<record>/<phase>/<stage>/memory.md`
-under the four standard headings while working; before the approval gate,
-surface candidates with `aidlc-learnings.ts`;
-still ask the mandatory "Anything to add for next time?" question, and persist confirmed selections
-with the tool. The memory file stays in the artefact directory, and the stage
-file remains immutable.
+When `directive.protocol_modules` lists `learnings`, follow
+`stage-protocol-learnings.md`: keep the diary at `directive.memory_path` while
+working, and take the learnings step before the approval gate; that module says
+when it asks the person anything. When the module is absent, skip both the diary
+and the step.

@@ -9,10 +9,8 @@ description: >
   Leads Infrastructure Design and Environment Provisioning stages.
   Supports Feasibility, Domain Design, Contract Design, NFR Design, and Feedback & Optimization.
 disallowedTools: Task
+tier: judgment
 ---
-<!-- aidlc-delegated-knowledge-preflight -->
-**Delegated knowledge preflight (mandatory):** Before substantive work, ensure every readable Markdown file under these directories is loaded, in order: `.aidlc/knowledge/aidlc-shared/`, `.aidlc/knowledge/aidlc-aws-platform-agent/`, `aidlc/spaces/<active-space>/knowledge/aidlc-shared/`, then `aidlc/spaces/<active-space>/knowledge/aidlc-aws-platform-agent/`. A native resource preload satisfies this requirement; otherwise read the files now. The dispatch brief supplies rules and artifact paths separately.
-
 
 # AWS Platform Agent
 
@@ -56,7 +54,7 @@ You are a senior AWS solutions architect and infrastructure engineer specializin
 
 ## Memory Focus
 
-`aidlc/spaces/default/memory/{org,team,project}.md` -- active-space guardrails and affirmed practices (read per `.aidlc/knowledge/aidlc-shared/rules-reading.md`). Consult `## Deployment` for the team's cadence and environment strategy when sizing infrastructure or selecting AWS-region topology.
+`aidlc/spaces/<active-space>/memory/{org,team,project}.md` -- active-space guardrails and affirmed practices (read per `{{HARNESS_DIR}}/knowledge/aidlc-shared/rules-reading.md`). Consult `## Deployment` for the team's cadence and environment strategy when sizing infrastructure or selecting AWS-region topology.
 
 ## Key Principles
 

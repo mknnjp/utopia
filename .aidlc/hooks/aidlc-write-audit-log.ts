@@ -1,40 +1,64 @@
 // PostToolUse hook: Emit ARTIFACT_CREATED / ARTIFACT_UPDATED when files under
 // the active intent record or active space codekb tree are written or edited.
-// Distinguishes CREATE vs UPDATE by checking whether the target file existed
-// before the Write/Edit.
+// Distinguishes CREATE vs UPDATE using the tool and, for Write,
+// a post-write comparison of modification and creation timestamps.
 //
 // Receives JSON on stdin from Claude Code. No-op if no audit.md exists (no
-// active workflow in this cwd) to preserve the existing "only log when
+// active workflow in this cwd) to preserve the "only log when
 // relevant" behaviour.
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { appendAuditEntry } from "../tools/aidlc-audit.ts";
+import { appendAuditEntryUnlocked } from "../tools/aidlc-audit.ts";
 import {
+  hookStandsOutside,
+  enterHookWorkflow,
   auditFilePath,
+  type StageEntry,
   type ClaudeCodeHookInput,
   codekbDir,
   docsRoot,
   errorMessage,
   hookDebug,
   hooksHealthDir,
+  writeHookStatusFile,
   isClaudeCodeHookInput,
+  activeSummaryAuthorizationForRecordPath,
   isoTimestamp,
+  loadStageGraphAll,
+  normalizeDriveLetter,
   recordHookDrop,
   resolveProjectDirFromHook,
+  SUMMARY_AUTHORIZATION_FIELD,
+  withAuditLock,
 } from "../tools/aidlc-lib.ts";
 
 export async function run(input: string): Promise<number> {
-const projectDir = resolveProjectDirFromHook(import.meta.url);
+  const projectDir = resolveProjectDirFromHook(import.meta.url);
+  let payloadSession: unknown;
+  try {
+    payloadSession = (JSON.parse(input) as { session_id?: unknown }).session_id;
+  } catch {
+    // Missing/malformed payload: resolve without a payload session.
+  }
+  // A write in a conversation that has not joined the selected workflow is not that workflow's artifact.
+  const workflow = enterHookWorkflow(projectDir, payloadSession);
+  try {
+    if (hookStandsOutside(workflow)) return 0;
+    return await recordArtifact(input, projectDir);
+  } finally {
+    workflow.restore();
+  }
+}
+
+async function recordArtifact(input: string, projectDir: string): Promise<number> {
 hookDebug(projectDir, "write-audit-log", "invoked", { projectDir, cwd: process.cwd() });
 
-// Write health heartbeat
 const healthDir = hooksHealthDir(projectDir);
-mkdirSync(healthDir, { recursive: true });
-writeFileSync(join(healthDir, "write-audit-log.last"), isoTimestamp(), "utf-8");
+writeHookStatusFile(healthDir, "write-audit-log.last", isoTimestamp());
 
-// Read JSON from stdin. If stdin is a TTY (interactive shell, test harness
-// running under `bash -x`-inheriting pipeline), no JSON is coming — exit
-// cleanly instead of blocking on the terminal read.
+// Parse the hook input. If stdin is a TTY (interactive shell, test harness
+// running under `bash -x`-inheriting pipeline), no JSON is expected - exit
+// cleanly.
 if (process.stdin.isTTY) {
   hookDebug(projectDir, "write-audit-log", "exit: stdin isTTY");
   return 0;
@@ -57,8 +81,11 @@ const tool = parsed.tool_name ?? "";
 const rawFile: string = parsed.tool_input?.file_path ?? "";
 if (!rawFile) return 0;
 const file = isAbsolute(rawFile) ? rawFile : join(projectDir, rawFile);
-const auditFileValue = file.replace(/\\/g, "/");
-const fileNorm = auditFileValue; // forward-slash form for all path matching below
+// Forward-slash form with the drive letter normalized (see normalizeDriveLetter)
+// for all path matching below. The File field carries the same spelling, so a
+// `c:\` report and a `C:\` project dir record one identity.
+const auditFileValue = normalizeDriveLetter(file.replace(/\\/g, "/"));
+const fileNorm = auditFileValue;
 
 // Only log writes to the active intent's RECORD tree, plus the space's codekb
 // tree. The record re-roots per intent (aidlc/spaces/<space>/intents/
@@ -74,11 +101,11 @@ const fileNorm = auditFileValue; // forward-slash form for all path matching bel
 // codekbDir(pd, "_") is <pd>/aidlc/spaces/<space>/codekb/_; its parent is the
 // codekb root for the active space (same idiom as producesDirsForStage in
 // aidlc-state.ts).
-const recordRoot = docsRoot(projectDir).replace(/\\/g, "/").replace(/\/$/, "");
+const recordRoot = normalizeDriveLetter(docsRoot(projectDir).replace(/\\/g, "/").replace(/\/$/, ""));
 const underRecord = fileNorm === recordRoot || fileNorm.startsWith(`${recordRoot}/`);
-const codekbRoot = join(codekbDir(projectDir, "_"), "..")
-  .replace(/\\/g, "/")
-  .replace(/\/$/, "");
+const codekbRoot = normalizeDriveLetter(
+  join(codekbDir(projectDir, "_"), "..").replace(/\\/g, "/").replace(/\/$/, ""),
+);
 const underCodekb = fileNorm.startsWith(`${codekbRoot}/`);
 hookDebug(projectDir, "write-audit-log", "path-gate", {
   tool,
@@ -114,7 +141,7 @@ if (!existsSync(auditFile)) {
 }
 
 // Extract the context breadcrumb: the path relative to the record root (the
-// per-intent record dir on the new layout, or the flat `aidlc-docs/` root),
+// per-intent record dir, or the bare space record root with no intent),
 // or "codekb > <repo> > <name>" for a codekb write. Prefer the root prefixes;
 // fall back to the `aidlc-docs/` anchor for a flat-legacy write that didn't
 // match either root.
@@ -145,7 +172,6 @@ let eventType: string;
 if (tool === "Edit") {
   eventType = "ARTIFACT_UPDATED";
 } else {
-  // Write or any other create-capable tool: check if file was net-new.
   let isNew = false;
   try {
     const { statSync } = await import("node:fs");
@@ -162,12 +188,42 @@ if (tool === "Edit") {
   eventType = isNew ? "ARTIFACT_CREATED" : "ARTIFACT_UPDATED";
 }
 
+// A write under the record descends from the summary confirmation that is the
+// active authorization for its stage (and Unit) at the moment of the write. The
+// row carries that authorization's id, so completion can ask "does this output
+// descend from the current confirmation" instead of "did it land after the
+// receipt". A write with no active authorization for its scope carries no id.
+//
+// The lookup and the append share one audit-lock hold: the answer command
+// writes the registry and appends its receipt under the same lock, so a
+// registry can never be observed here without the receipt that minted it (nor
+// during a rollback that removes it).
+const fields: Record<string, string> = {
+  Tool: tool,
+  File: auditFileValue,
+  Context: context,
+};
+let stages: StageEntry[] = [];
+if (underRecord && fileNorm.length > recordRoot.length) {
+  try {
+    stages = loadStageGraphAll();
+  } catch (e) {
+    hookDebug(projectDir, "write-audit-log", "stage graph unreadable", { error: errorMessage(e) });
+  }
+}
+
 try {
-  appendAuditEntry(eventType, {
-    Tool: tool,
-    File: auditFileValue,
-    Context: context,
-  }, projectDir);
+  withAuditLock(projectDir, () => {
+    if (underRecord && fileNorm.length > recordRoot.length) {
+      const authorization = activeSummaryAuthorizationForRecordPath(
+        projectDir,
+        fileNorm.slice(recordRoot.length + 1),
+        stages,
+      );
+      if (authorization !== null) fields[SUMMARY_AUTHORIZATION_FIELD] = authorization.id;
+    }
+    appendAuditEntryUnlocked(eventType, fields, projectDir);
+  });
   hookDebug(projectDir, "write-audit-log", "emitted", { eventType, file: auditFileValue, context });
 } catch (e) {
   // Hook must be a no-op on any audit emission failure to avoid breaking the
