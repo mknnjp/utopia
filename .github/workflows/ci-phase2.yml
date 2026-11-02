@@ -1,0 +1,117 @@
+name: CI Phase 2 — k6 Compatibility Verification Suite
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  k6-compatibility:
+    name: k6 Compatibility Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Set up Docker Compose
+        run: |
+          docker compose --version
+
+      - name: Create .env for CI
+        run: bun run scripts/ci/setup-env.ts
+        env:
+          BOOTSTRAP_KEY: ${{ secrets.BOOTSTRAP_KEY || 'ci-test-bootstrap-key-2026' }}
+
+      - name: Start application stack
+        run: |
+          docker compose -f docker/docker-compose.yml up -d utopia-api postgres caddy
+        env:
+          BOOTSTRAP_KEY: ${{ secrets.BOOTSTRAP_KEY || 'ci-test-bootstrap-key-2026' }}
+
+      - name: Wait for application health
+        run: |
+          echo "Waiting for application to become healthy..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/metrics > /dev/null 2>&1; then
+              echo "Application is healthy (metrics endpoint responding)"
+              exit 0
+            fi
+            echo "Attempt $i/30: not ready yet..."
+            sleep 2
+          done
+          echo "Application did not become healthy within 60s"
+          docker compose logs utopia-api
+          exit 1
+
+      - name: Install seed dependencies
+        working-directory: scripts/seed
+        run: bun install
+
+      - name: Load seed data
+        run: bun run scripts/seed/index.ts
+        env:
+          DATABASE_URL: postgres://utopia:utopia@localhost:5432/utopia?sslmode=disable
+          BOOTSTRAP_KEY: ${{ secrets.BOOTSTRAP_KEY || 'ci-test-bootstrap-key-2026' }}
+
+      - name: Set k6 user permissions
+        run: |
+          echo "K6_UID=$(id -u)" >> $GITHUB_ENV
+          echo "K6_GID=$(id -g)" >> $GITHUB_ENV
+
+      - name: Run k6 auth tests
+        run: |
+          docker compose -f docker/docker-compose.yml --profile testing run --rm k6 run \
+            --compatibility-mode=extended \
+            --env APP_BASE_URL=http://utopia-api:3000 \
+            --env BOOTSTRAP_KEY="${{ secrets.BOOTSTRAP_KEY || 'ci-test-bootstrap-key-2026' }}" \
+            --out json=/scripts/results/compatibility/auth-results.json \
+            /scripts/compatibility-tests/auth.ts
+
+      - name: Reload seed data for accounts tests
+        run: bun run scripts/seed/index.ts
+        env:
+          DATABASE_URL: postgres://utopia:utopia@localhost:5432/utopia?sslmode=disable
+          BOOTSTRAP_KEY: ${{ secrets.BOOTSTRAP_KEY || 'ci-test-bootstrap-key-2026' }}
+
+      - name: Run k6 accounts tests
+        run: |
+          docker compose -f docker/docker-compose.yml --profile testing run --rm k6 run \
+            --compatibility-mode=extended \
+            --env APP_BASE_URL=http://utopia-api:3000 \
+            --env BOOTSTRAP_KEY="${{ secrets.BOOTSTRAP_KEY || 'ci-test-bootstrap-key-2026' }}" \
+            --out json=/scripts/results/compatibility/accounts-results.json \
+            /scripts/compatibility-tests/accounts.ts
+
+      - name: Reload seed data for transactions tests
+        run: bun run scripts/seed/index.ts
+        env:
+          DATABASE_URL: postgres://utopia:utopia@localhost:5432/utopia?sslmode=disable
+          BOOTSTRAP_KEY: ${{ secrets.BOOTSTRAP_KEY || 'ci-test-bootstrap-key-2026' }}
+
+      - name: Run k6 transactions tests
+        run: |
+          docker compose -f docker/docker-compose.yml --profile testing run --rm k6 run \
+            --compatibility-mode=extended \
+            --env APP_BASE_URL=http://utopia-api:3000 \
+            --env BOOTSTRAP_KEY="${{ secrets.BOOTSTRAP_KEY || 'ci-test-bootstrap-key-2026' }}" \
+            --out json=/scripts/results/compatibility/transactions-results.json \
+            /scripts/compatibility-tests/transactions.ts
+
+      - name: Upload k6 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-compatibility-results
+          path: results/compatibility/
+          retention-days: 30
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f docker/docker-compose.yml --profile testing down -v
