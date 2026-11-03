@@ -31,6 +31,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -65,23 +66,49 @@ const HARNESS_NAME = (() => {
   }
   return HARNESS_LEAF.replace(/^\./, "");
 })();
+// Whether the .kiro tree is the KAS layout (Markdown agents, standalone hook
+// JSON) rather than the agent-v1 JSON layout. Same reading as the runtime's
+// kiroTreeLayout (core/tools/aidlc-runtime-paths.ts), which this template ships
+// without: harness.json's kiroLayout, else the row name trees carried before it,
+// else the conductor file. `kiro-ide` names only the KAS adapter.
+const KIRO_KAS_LAYOUT = (() => {
+  if (HARNESS_LEAF !== ".kiro") return false;
+  if (process.env.AIDLC_HARNESS_NAME?.trim() === "kiro-ide") return true;
+  try {
+    const parsed = JSON.parse(
+      readFileSync(join(HARNESS_DIR, "tools", "data", "harness.json"), "utf-8"),
+    ) as { kiroLayout?: unknown; name?: unknown; distribution?: unknown };
+    if (parsed.kiroLayout === "kas" || parsed.kiroLayout === "agent-v1") {
+      return parsed.kiroLayout === "kas";
+    }
+    const row = typeof parsed.name === "string" ? parsed.name : parsed.distribution;
+    if (row === "kiro-ide" || row === "kiro") return row === "kiro-ide";
+  } catch {
+    // A tree without readable metadata still has its conductor file.
+  }
+  return existsSync(join(HARNESS_DIR, "agents", "aidlc-aidlc.md")) || existsSync(join(HARNESS_DIR, "agents", "aidlc.md"));
+})();
 const IS_COPILOT = HARNESS_NAME === "copilot";
 const IS_OPENCODE = HARNESS_NAME === "opencode";
 const STAGES_DIR = join(HARNESS_DIR, "aidlc-common", "stages");
+// The harness's skill-discovery root: Copilot's .github/skills, Codex's
+// .agents/skills (it ships no <harnessDir>/skills; same rule as the engine's
+// resolveSkillsPath), else <harnessDir>/skills.
 const SKILLS_DIR = IS_COPILOT
   ? join(PROJECT_DIR, ".github", "skills")
-  : join(HARNESS_DIR, "skills");
+  : HARNESS_NAME === "codex" && !existsSync(join(HARNESS_DIR, "skills"))
+    ? join(PROJECT_DIR, ".agents", "skills")
+    : join(HARNESS_DIR, "skills");
 const PHASES = ["initialization", "ideation", "inception", "construction", "operation"];
-const COMPOSE_LOCK_RETRIES = 600;
-const SCOPE_TABLE_BEGIN =
-  "<!-- BEGIN: compiled scope grid via `bun aidlc-utility.ts scope-table` - do NOT hand-edit -->";
+const NATIVE_RUNTIME = Boolean(process.env.AIDLC_COMPILED_EXECUTABLE?.trim());
 const SCOPE_TABLE_END = "<!-- END: compiled scope grid -->";
-const STAGE_TABLE_BEGIN =
-  "<!-- BEGIN: compiled stage graph via `bun aidlc-utility.ts stage-table` - do NOT hand-edit -->";
 const STAGE_TABLE_END = "<!-- END: compiled stage graph -->";
 type ParseStageFrontmatter = (raw: string) => Record<string, unknown>;
 interface InstalledAidlcLib {
   hooksHealthDir?: (projectDir: string) => string;
+  committedTextBytes?: (bytes: Buffer) => Buffer;
+  writeHookStatusFile?: (healthDir: string, fileName: string, data: string) => boolean;
+  removeHookStatusFile?: (healthDir: string, fileName: string) => boolean;
   parseStageFrontmatter?: ParseStageFrontmatter;
   acquireAuditLock?: (
     projectDir: string,
@@ -96,6 +123,23 @@ interface InstalledStageSchema {
   ) => { valid: boolean; errors?: string[] };
 }
 
+// Plugin prose gets core's invocation tokens (the INVOKE and TOOL_PREFIX ones) for the
+// channel the installed tree was projected for; the installed module knows it.
+type ProjectTokens = (text: string, harnessDir: string) => string;
+// An installed tree from before projectInvocationTokens existed (not yet
+// refreshed with `aidlc config`) still composes: compose runs under Bun, so the
+// copy channel's dispatcher line works for that tree until it is refreshed.
+// Token names are assembled, not written whole: this file ships verbatim in
+// every installed tree, which must carry no unprojected invocation token.
+const tokenName = (name: string): string => `{{${name}}}`;
+const copyChannelTokens: ProjectTokens = (text, harnessDir) => text
+  .replaceAll(tokenName("HARNESS_DIR"), harnessDir)
+  .replaceAll(tokenName("INVOKE"), `bun ${harnessDir}/tools/aidlc.ts`)
+  .replaceAll(tokenName("TOOL_PREFIX"), `bun ${harnessDir}/tools/`);
+const projectPluginTokens: ProjectTokens = await import(join(HARNESS_DIR, "tools", "aidlc-command.ts"))
+  .then((m) => typeof m.projectInvocationTokens === "function" ? m.projectInvocationTokens as ProjectTokens : copyChannelTokens)
+  .catch(() => copyChannelTokens);
+
 let installedLibPromise: Promise<InstalledAidlcLib | null> | null = null;
 let installedSchemaPromise: Promise<InstalledStageSchema | null> | null = null;
 let composeOwnsWorkspaceLock = false;
@@ -105,6 +149,19 @@ function installedAidlcLib(): Promise<InstalledAidlcLib | null> {
     .then((module) => module as InstalledAidlcLib)
     .catch(() => null);
   return installedLibPromise;
+}
+
+async function composeLockRetries(): Promise<number> {
+  // Resolve from the installed engine: this template is copied into plugins,
+  // so repository-relative imports would break emitted hooks.
+  try {
+    const budget = await import(join(HARNESS_DIR, "tools", "aidlc-runtime-budget.ts"));
+    if (Number.isSafeInteger(budget.LONG_SUBPROCESS_TIMEOUT_MS) &&
+      budget.LONG_SUBPROCESS_TIMEOUT_MS > 0) {
+      return Math.ceil(budget.LONG_SUBPROCESS_TIMEOUT_MS / 100);
+    }
+  } catch { /* Older source installs do not contain the shared policy module. */ }
+  return 9000; // Fifteen-minute compatibility backstop, at the existing 100ms cadence.
 }
 
 function installedStageSchema(): Promise<InstalledStageSchema | null> {
@@ -129,8 +186,19 @@ function slugFromPath(path: string): string {
   return path.replace(/\\/g, "/").split("/").pop()!.replace(/\.md$/, "");
 }
 
+const SAFE_PLUGIN_KEY = /^[a-z][a-z0-9-]*$/;
+
 function pluginNameFromRoot(): string {
+  const supplied = process.env.AIDLC_PLUGIN_KEY?.trim();
+  if (supplied && SAFE_PLUGIN_KEY.test(supplied)) return supplied;
   if (!PLUGIN_ROOT) return "plugin";
+  // The plugin's own manifest names it whatever the host calls it; a build
+  // from before it travelled with the plugin named the host package aidlc-<name>.
+  try {
+    const own = JSON.parse(readFileSync(join(PLUGIN_ROOT, ".aidlc-plugin", "plugin.json"), "utf-8"));
+    const name = typeof own?.name === "string" ? own.name.trim() : "";
+    if (SAFE_PLUGIN_KEY.test(name)) return name;
+  } catch { /* fall through to the host manifest */ }
   for (const md of [
     ".claude-plugin",
     ".codex-plugin",
@@ -141,16 +209,42 @@ function pluginNameFromRoot(): string {
   ]) {
     try {
       const m = JSON.parse(readFileSync(join(PLUGIN_ROOT, md, "plugin.json"), "utf-8"));
-      if (typeof m?.name === "string" && m.name.trim()) {
-        const hostName = m.name.trim();
-        // Emitted AIDLC plugins use aidlc-<name> as the host package ID while
-        // stage/scope ownership uses the logical <name>.
-        return hostName.startsWith("aidlc-") ? hostName.slice("aidlc-".length) : hostName;
+      if (typeof m?.name === "string" && m.name.startsWith("aidlc-")) {
+        const key = m.name.slice("aidlc-".length);
+        if (SAFE_PLUGIN_KEY.test(key)) return key;
       }
     } catch { /* try next / fall through */ }
   }
+  const fromContent = firstPluginFieldInPlugin();
+  if (fromContent) return fromContent;
   const parts = PLUGIN_ROOT.replace(/\\/g, "/").replace(/\/+$/, "").split("/");
   return parts[parts.length - 2] || parts[parts.length - 1] || "plugin";
+}
+
+function firstPluginFieldInPlugin(): string | null {
+  const roots = ["stages", "scopes", "contributions"];
+  const visit = (dir: string): string | null => {
+    if (!existsSync(dir)) return null;
+    for (const entry of readdirSync(dir).sort()) {
+      const path = join(dir, entry);
+      if (statSync(path).isDirectory()) {
+        const nested = visit(path);
+        if (nested) return nested;
+        continue;
+      }
+      if (!entry.endsWith(".md")) continue;
+      const match = readFileSync(path, "utf-8").match(
+        /^plugin:\s*([a-z][a-z0-9-]*)\s*$/m,
+      );
+      if (match) return match[1];
+    }
+    return null;
+  };
+  for (const root of roots) {
+    const found = visit(join(PLUGIN_ROOT, root));
+    if (found) return found;
+  }
+  return null;
 }
 
 // The plugin's stable IDENTITY, computed once up front so every per-plugin
@@ -159,15 +253,16 @@ function pluginNameFromRoot(): string {
 // plugin-root basename: a projection root is `dist/plugins/<name>/<harness>`, so
 // its basename is the harness leaf (claude/kiro), shared by every plugin — keying
 // on it would let two plugins on one harness clobber each other's drops/retry
-// files. Prefer the manifest `name`; fall back to the parent-dir <name> segment.
+// files. Transactional sync injects the normalized host-manifest key; direct
+// compatibility composition derives the same key from that manifest.
 const PLUGIN_NAME = pluginNameFromRoot();
 const PLUGIN_KEY = PLUGIN_NAME.replace(/[^\w.-]/g, "_");
 
 // Resolve the hooks-health dir from the INSTALLED tree so compose drops land
 // exactly where core hooks write theirs (hooksHealthDir under docsRoot) and where
-// --doctor scans — not a bespoke flat path (round-2 major: the old path was read
-// by nothing). Memoized; falls back to the workspace-level dir if the lib can't be
-// loaded (e.g. a partial install), so a drop is never lost.
+// --doctor scans, not a bespoke flat path, which nothing reads. Memoized; falls
+// back to the workspace-level dir if the lib can't be loaded (e.g. a partial
+// install), so a drop is never lost.
 let _healthDir: string | null = null;
 async function resolveHealthDir(): Promise<string> {
   if (_healthDir) return _healthDir;
@@ -176,7 +271,7 @@ async function resolveHealthDir(): Promise<string> {
   if (typeof lib?.hooksHealthDir === "function") {
     dir = lib.hooksHealthDir(PROJECT_DIR);
   } else {
-    dir = join(PROJECT_DIR, "aidlc", "spaces", "default", "intents", ".aidlc-hooks-health");
+    dir = join(PROJECT_DIR, "aidlc", "spaces", "default", "intents", ".aidlc-engine", "hooks-health");
   }
   _healthDir = dir;
   return dir;
@@ -204,23 +299,45 @@ function recordInstalledToolPayloadDrop(reason: string): void {
 // Flush drops as the CURRENT run's complete record: OVERWRITE (not append), and
 // REMOVE the file when the run had none. So the drops file always reflects only
 // the latest compose — it self-clears when the cause is fixed and re-composed,
-// and can't grow unboundedly on a persistent collision (round-5). Doctor reading
+// and can't grow unboundedly on a persistent collision. Doctor reading
 // it therefore sees a live signal, not accumulated history.
 // The drops file is PER-PLUGIN (`plugin-compose-<PLUGIN_KEY>.drops`), not a
 // single shared file: SessionStart runs one compose per installed plugin against
 // the same project, and an overwrite-per-run shared file let the LAST plugin win
 // — a clean plugin's compose (or an early-exit guard) deleted another plugin's
-// live degraded drop, so doctor went green (round-6). Per-plugin files isolate
+// live degraded drop, so doctor went green. Per-plugin files isolate
 // each plugin's signal; doctor globs `*.drops` and aggregates them all.
+// The file goes through the installed engine's hook status writer and
+// remover, which go through no link inside the record; an engine from before
+// them keeps the plain write and removal until it is upgraded.
+async function writeDropFile(healthDir: string, fileName: string, data: string): Promise<void> {
+  const lib = await installedAidlcLib();
+  if (typeof lib?.writeHookStatusFile === "function") {
+    lib.writeHookStatusFile(healthDir, fileName, data);
+    return;
+  }
+  mkdirSync(healthDir, { recursive: true });
+  writeFileSync(join(healthDir, fileName), data, { flag: "w" });
+}
+
+async function removeDropFile(healthDir: string, fileName: string): Promise<void> {
+  const lib = await installedAidlcLib();
+  if (typeof lib?.removeHookStatusFile === "function") {
+    lib.removeHookStatusFile(healthDir, fileName);
+    return;
+  }
+  const dropFile = join(healthDir, fileName);
+  if (existsSync(dropFile)) rmSync(dropFile, { force: true });
+}
+
 async function flushDrops(): Promise<void> {
   try {
     const healthDir = await resolveHealthDir();
-    const dropFile = join(healthDir, `plugin-compose-${PLUGIN_KEY}.drops`);
+    const dropName = `plugin-compose-${PLUGIN_KEY}.drops`;
     if (_drops.length === 0) {
-      if (existsSync(dropFile)) rmSync(dropFile, { force: true });
+      await removeDropFile(healthDir, dropName);
     } else {
-      mkdirSync(healthDir, { recursive: true });
-      writeFileSync(dropFile, _drops.map((l) => l + "\n").join(""), { flag: "w" });
+      await writeDropFile(healthDir, dropName, _drops.map((l) => l + "\n").join(""));
     }
   } catch { /* truly non-fatal */ }
   _drops.length = 0;
@@ -240,19 +357,11 @@ async function flushInstalledToolPayloadDrops(): Promise<void> {
   if (!installedToolPayloadAuditRan) return;
   try {
     const healthDir = await resolveHealthDir();
-    const dropFile = join(
-      healthDir,
-      `plugin-compose-installed-tool-payloads-${HARNESS_KEY}.drops`,
-    );
+    const dropName = `plugin-compose-installed-tool-payloads-${HARNESS_KEY}.drops`;
     if (_installedToolPayloadDrops.length === 0) {
-      if (existsSync(dropFile)) rmSync(dropFile, { force: true });
+      await removeDropFile(healthDir, dropName);
     } else {
-      mkdirSync(healthDir, { recursive: true });
-      writeFileSync(
-        dropFile,
-        _installedToolPayloadDrops.map((line) => line + "\n").join(""),
-        { flag: "w" },
-      );
+      await writeDropFile(healthDir, dropName, _installedToolPayloadDrops.map((line) => line + "\n").join(""));
     }
   } catch { /* truly non-fatal */ }
   _installedToolPayloadDrops.length = 0;
@@ -269,6 +378,14 @@ function installedOrchestratorSkillPath(): string {
   const agentsSkill = join(PROJECT_DIR, ".agents", "skills", "aidlc", "SKILL.md");
   if (existsSync(agentsSkill)) return agentsSkill;
   return harnessSkill;
+}
+
+// The generated scope and stage tables live in tables.md beside the skill; an
+// install from before that keeps them in SKILL.md itself.
+function installedSkillTablesPath(): string {
+  const skill = installedOrchestratorSkillPath();
+  const tables = join(dirname(skill), "tables.md");
+  return existsSync(tables) ? tables : skill;
 }
 
 function selectedPlugins(): Set<string> | null {
@@ -294,7 +411,10 @@ function selectCommandForPlugin(): string {
   const selected = selectedPlugins();
   const names = new Set<string>(selected ?? ["aidlc"]);
   names.add(PLUGIN_NAME);
-  return `bun ${HARNESS_LEAF}/tools/aidlc-utility.ts select-plugins ${[...names].sort().join(",")}`;
+  const selection = [...names].sort().join(",");
+  return NATIVE_RUNTIME
+    ? `aidlc engine plugin select ${selection}`
+    : `bun ${HARNESS_LEAF}/tools/aidlc-utility.ts select-plugins ${selection}`;
 }
 
 function installedToolCommand(tool: "utility" | "graph" | "runner", args: string[]): string[] {
@@ -307,11 +427,12 @@ function installedToolCommand(tool: "utility" | "graph" | "runner", args: string
     };
     return [process.execPath, join(HARNESS_DIR, "tools", files[tool]), ...args];
   }
-  if (tool === "utility") return [executable, "gen", ...args];
-  if (tool === "graph") return [executable, "graph", ...args];
-  if (args[0] === "write") return [executable, "gen", "runners", ...args.slice(1)];
-  if (args[0] === "scopes") return [executable, "gen", "runner-scopes", ...args.slice(1)];
-  if (args[0] === "list") return [executable, "gen", "runner-list", ...args.slice(1)];
+  if (tool === "utility") return [executable, "engine", "gen", ...args];
+  if (tool === "graph") return [executable, "engine", "graph", ...args];
+  if (args[0] === "write") return [executable, "engine", "gen", "runners", ...args.slice(1)];
+  if (args[0] === "check") return [executable, "engine", "gen", "runners", "--check", ...args.slice(1)];
+  if (args[0] === "scopes") return [executable, "engine", "gen", "runner-scopes", ...args.slice(1)];
+  if (args[0] === "list") return [executable, "engine", "gen", "runner-list", ...args.slice(1)];
   throw new Error(`No compiled dispatcher route for aidlc-runner-gen ${args.join(" ")}`);
 }
 
@@ -341,24 +462,27 @@ function installedToolEnv(): NodeJS.ProcessEnv {
 
 function refreshSkillGeneratedRegion(
   verb: "scope-table" | "stage-table",
-  beginMarker: string,
   endMarker: string,
 ): void {
-  const skillMd = installedOrchestratorSkillPath();
+  const skillMd = installedSkillTablesPath();
   if (!existsSync(skillMd)) {
     recordDrop(`${verb} refresh skipped: ${relative(PROJECT_DIR, skillMd)} not present in this install`, "advisory");
     return;
   }
 
   const before = readFileSync(skillMd, "utf-8").replace(/\r\n/g, "\n");
-  if (!before.includes(beginMarker)) {
-    recordDrop(`${verb} refresh skipped: SKILL.md missing BEGIN marker`, "advisory");
+  const kind = verb === "stage-table" ? "stage graph" : "scope grid";
+  const beginMatch = before.match(
+    new RegExp(`<!-- BEGIN: compiled ${kind}[^\\n]* -->`),
+  );
+  if (!beginMatch || beginMatch.index === undefined) {
+    recordDrop(`${verb} refresh skipped: ${basename(skillMd)} missing BEGIN marker`, "advisory");
     return;
   }
-  const beginIdx = before.indexOf(beginMarker);
+  const beginIdx = beginMatch.index;
   const endIdx = before.indexOf(endMarker, beginIdx);
   if (endIdx === -1) {
-    recordDrop(`${verb} refresh failed: SKILL.md missing END marker after BEGIN marker`);
+    recordDrop(`${verb} refresh failed: ${basename(skillMd)} missing END marker after BEGIN marker`);
     return;
   }
 
@@ -374,7 +498,10 @@ function refreshSkillGeneratedRegion(
   }
 
   const region = (r.stdout || "").replace(/\r\n/g, "\n").replace(/\n$/, "");
-  if (!region.includes(beginMarker) || !region.includes(endMarker)) {
+  if (
+    !new RegExp(`<!-- BEGIN: compiled ${kind}[^\\n]* -->`).test(region) ||
+    !region.includes(endMarker)
+  ) {
     recordDrop(`aidlc-utility ${verb} emitted an invalid generated region`);
     return;
   }
@@ -389,7 +516,7 @@ function refreshSkillGeneratedRegion(
 // Does the INSTALLED engine accept a frontmatter key? Probes the installed
 // validator (not our own copy) so compose never writes a key an older shipped
 // engine would reject — which would permanently break that install's graph
-// compile with only a drops line as evidence (round-3 blocker). Run the installed
+// compile with only a drops line as evidence. Run the installed
 // validateStageFrontmatter against a minimal-but-valid stage carrying the key; if
 // it rejects specifically because of that key, the merge is unsafe here. Fails
 // OPEN (returns true) if the lib can't be loaded — a partial install already
@@ -406,7 +533,6 @@ async function installedSchemaAccepts(key: string, sampleValue: unknown): Promis
       const withKey = { ...base, [key]: sampleValue };
       const res = schema.validateStageFrontmatter(withKey);
       if (res.valid) return true;
-      // Rejected — is it BECAUSE of our key? (An unknown/!array error naming it.)
       const errs: string[] = res.errors ?? [];
       return !errs.some((e) => e.includes(key));
     } catch {
@@ -416,7 +542,6 @@ async function installedSchemaAccepts(key: string, sampleValue: unknown): Promis
   return true; // module unavailable → don't block (see note above)
 }
 
-// Guard: only compose in an AIDLC project, with a resolvable plugin root.
 export async function compose(): Promise<void> {
 if (!existsSync(join(HARNESS_DIR, "tools", "aidlc-graph.ts"))) {
   return; // not an AIDLC project — nothing to do (no drop: not our project)
@@ -442,9 +567,9 @@ if (
   await flushDrops();
   return;
 }
-// A sibling compose can legitimately hold the lock for compile + runner
-// regeneration, so queue for ~60s rather than skipping after the default ~5s.
-if (!lockLib.acquireAuditLock(PROJECT_DIR, COMPOSE_LOCK_RETRIES)) {
+// A sibling compose can hold the lock across compilation and runner generation.
+// Use the installed compound-work backstop without changing owner/reaper rules.
+if (!lockLib.acquireAuditLock(PROJECT_DIR, await composeLockRetries())) {
   recordDrop("plugin compose skipped: could not acquire the shared workspace lock");
   await flushDrops();
   return;
@@ -458,6 +583,13 @@ function writeComposeFile(path: string, data: string | Buffer): void {
     composeFileSnapshots.set(path, existsSync(path) ? readFileSync(path) : null);
   }
   writeFileSync(path, data);
+}
+function removeComposeFile(path: string): void {
+  if (!existsSync(path)) return;
+  if (composeTransactionOpen && !composeFileSnapshots.has(path)) {
+    composeFileSnapshots.set(path, readFileSync(path));
+  }
+  rmSync(path, { force: true });
 }
 function commitComposeWrites(): void {
   composeTransactionOpen = false;
@@ -479,6 +611,64 @@ function rollbackComposeWrites(): void {
   if (failures.length > 0) {
     recordDrop(`compose rollback could not restore ${failures.join("; ")}`);
   }
+}
+// --- what this plugin installed ---------------------------------------------
+// The same hash-proven record `aidlc engine plugin sync` writes and reads
+// (tools/data/plugin-owned-<key>.json: project-relative forward-slash paths, a
+// sha256 per file). It is what lets a re-compose tell the plugin's own older
+// copy (replace it) from a copy the person changed (report it). Without it
+// every differing file was a collision, so a plugin's fix to a sensor or tool
+// never reached a project composed without sync in front (the Kiro CLI
+// fallback, a hand run, the plugin test tool).
+const ownedRecordPath = join(HARNESS_DIR, "tools", "data", `plugin-owned-${PLUGIN_KEY}.json`);
+// A file's identity is its committed text (the installed engine's rule: CRLF
+// reads as LF, so a checkout that turns line endings is no change). An engine
+// without the rule compares raw bytes, as before.
+const committedText: (bytes: Buffer) => Buffer =
+  typeof lockLib.committedTextBytes === "function" ? lockLib.committedTextBytes : (bytes) => bytes;
+const sha256Of = (bytes: Buffer): string => `sha256:${createHash("sha256").update(committedText(bytes)).digest("hex")}`;
+// A record written before the rule holds the raw-bytes digest of a CRLF file;
+// identical bytes are no change either, so that record proves the file too.
+const recordedDigestMatches = (bytes: Buffer, recorded: string): boolean =>
+  recorded === sha256Of(bytes) || recorded === `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+const projectRelPosix = (path: string): string => relative(PROJECT_DIR, path).replace(/\\/g, "/");
+let _priorOwned: Map<string, string> | null = null;
+function priorOwned(): Map<string, string> {
+  if (_priorOwned) return _priorOwned;
+  const out = new Map<string, string>();
+  try {
+    const parsed = JSON.parse(readFileSync(ownedRecordPath, "utf-8")) as {
+      schemaVersion?: unknown;
+      name?: unknown;
+      files?: unknown;
+    };
+    if (parsed.schemaVersion === 1 && parsed.name === PLUGIN_KEY && Array.isArray(parsed.files)) {
+      for (const file of parsed.files as Array<{ path?: unknown; sha256?: unknown }>) {
+        if (typeof file?.path === "string" && typeof file?.sha256 === "string") out.set(file.path, file.sha256);
+      }
+    }
+  } catch {
+    // No record yet: a first compose, or a project composed before the record
+    // existed. Every differing file is then reported, never overwritten.
+  }
+  _priorOwned = out;
+  return out;
+}
+// Files this run wrote, replaced, or found byte-identical to the plugin's copy.
+const ownedThisRun = new Map<string, string>();
+// The knowledge preflight: its marker line and the paragraph below it, where the
+// after-preflight persona anchor lands. It is the one part of a plugin agent the
+// plugin builder writes, and its wording moves with AI-DLC releases. 2.11.0 never
+// recorded an agent the harness reshapes at install, so a file that is this copy
+// everywhere but there is the plugin's own older copy; any other difference may
+// be the person's, and stays theirs.
+const KNOWLEDGE_PREFLIGHT = /^<!-- aidlc-delegated-knowledge-preflight -->\n[^\n]*\n/m;
+function sameButKnowledgePreflight(installed: Buffer, current: Buffer): boolean {
+  const own = committedText(current).toString("utf-8");
+  const ownBlock = KNOWLEDGE_PREFLIGHT.exec(own);
+  const theirs = committedText(installed).toString("utf-8");
+  if (!ownBlock || !KNOWLEDGE_PREFLIGHT.test(theirs)) return false;
+  return theirs.replace(KNOWLEDGE_PREFLIGHT, () => ownBlock[0]) === own;
 }
 
 if (!pluginEnabledBySelection()) {
@@ -582,39 +772,42 @@ function installedNameRoster(dir: string): Map<string, string> {
   return out;
 }
 
+// Why a plugin's agent or scope file cannot join the installed ones, or null:
+// its plugin identity, or a name an installed file already has.
+function installedNameRefusal(
+  installedByName: ReadonlyMap<string, string>,
+  kind: "agents" | "scopes",
+  { file, dest, content }: { file: string; dest: string; content: string },
+): string | null {
+  // `aidlc-` is core's namespace: a scope declaring an aidlc--prefixed
+  // plugin: would generate a runner dir on core's `aidlc-<name>` path and
+  // silently clobber it. Reject the file, mirroring the compile-side guard.
+  const declaredPlugin = frontmatterScalar(content, "plugin");
+  if (declaredPlugin?.startsWith("aidlc-")) {
+    return `plugin "${PLUGIN_NAME}" ${kind} file "${relative(PLUGIN_ROOT, file)}" declares plugin "${declaredPlugin}"; the "aidlc-" prefix is reserved for core (it collides with core runner paths); not copied`;
+  }
+  if (declaredPlugin !== PLUGIN_NAME) {
+    return `plugin "${PLUGIN_NAME}" ${kind} file "${relative(PLUGIN_ROOT, file)}" declares ${declaredPlugin ? `plugin "${declaredPlugin}"` : "no plugin identity"}; owned plugin content must match the host manifest identity; not copied`;
+  }
+  const name = frontmatterName(content);
+  const collidingFile = name ? installedByName.get(name) : undefined;
+  if (collidingFile && collidingFile !== dest) {
+    return `plugin "${PLUGIN_NAME}" ${kind} file "${relative(PLUGIN_ROOT, file)}" declares name "${name}", colliding with installed file "${relative(PROJECT_DIR, collidingFile)}"; not copied`;
+  }
+  return null;
+}
+
 function installedNameCollisionPrecheck(dst: string, kind: "agents" | "scopes"): CopyPrecheck {
   const installedByName = installedNameRoster(dst);
-  return ({ file, dest, content }) => {
-    if (!file.endsWith(".md")) return true;
-    // `aidlc-` is core's namespace: a scope declaring an aidlc--prefixed
-    // plugin: would generate a runner dir on core's `aidlc-<name>` path and
-    // silently clobber it. Reject the file, mirroring the compile-side guard.
-    const declaredPlugin = frontmatterScalar(content, "plugin");
-    if (declaredPlugin?.startsWith("aidlc-")) {
-      recordDrop(
-        `plugin "${PLUGIN_NAME}" ${kind} file "${relative(PLUGIN_ROOT, file)}" declares plugin "${declaredPlugin}"; the "aidlc-" prefix is reserved for core (it collides with core runner paths); not copied`,
-        "degraded",
-      );
+  return (ctx) => {
+    if (!ctx.file.endsWith(".md")) return true;
+    const refusal = installedNameRefusal(installedByName, kind, ctx);
+    if (refusal) {
+      recordDrop(refusal, "degraded");
       return false;
     }
-    if (declaredPlugin !== PLUGIN_NAME) {
-      recordDrop(
-        `plugin "${PLUGIN_NAME}" ${kind} file "${relative(PLUGIN_ROOT, file)}" declares ${declaredPlugin ? `plugin "${declaredPlugin}"` : "no plugin identity"}; owned plugin content must match the host manifest identity; not copied`,
-        "degraded",
-      );
-      return false;
-    }
-    const name = frontmatterName(content);
-    if (!name) return true;
-    const collidingFile = installedByName.get(name);
-    if (collidingFile && collidingFile !== dest) {
-      recordDrop(
-        `plugin "${PLUGIN_NAME}" ${kind} file "${relative(PLUGIN_ROOT, file)}" declares name "${name}", colliding with installed file "${relative(PROJECT_DIR, collidingFile)}"; not copied`,
-        "degraded",
-      );
-      return false;
-    }
-    installedByName.set(name, dest);
+    const name = frontmatterName(ctx.content);
+    if (name) installedByName.set(name, ctx.dest);
     return true;
   };
 }
@@ -646,7 +839,7 @@ function sensorManifestNamePrecheck(): CopyPrecheck {
       "degraded",
     );
   };
-  // copyTreeNoClobber skips prechecks when the destination already exists, so an
+  // copyTreeNoClobber runs no precheck on an existing destination it keeps, so an
   // undiscoverable manifest an OLDER (pre-guard) compose already landed would
   // never reach the precheck below. Audit those up front - otherwise an upgrade
   // leaves the dead sensor silently on disk forever (mirrors the stage guards).
@@ -679,7 +872,7 @@ function doctorScriptOwnershipPrecheck(): CopyPrecheck {
     );
   };
   // Older compose versions may already have landed the foreign file. Audit that
-  // state up front because copyTreeNoClobber skips prechecks for existing paths.
+  // state up front because copyTreeNoClobber runs no precheck on an existing file it keeps.
   for (const file of walk(toolsRoot).filter((p) => p.endsWith("-doctor.ts"))) {
     const relPosix = relative(toolsRoot, file).replace(/\\/g, "/");
     const owner = foreignOwner(relPosix);
@@ -748,12 +941,16 @@ function toolsTestPayloadPrecheck(): CopyPrecheck {
   };
 }
 
+// A plugin persona reads the method from the engine's copy of the active
+// space's memory (aidlc/active-memory/, the same fixed path on every install),
+// as the shipped personas do.
 function projectOpencodeAgentMemory(raw: string): string {
   return raw
-    .replaceAll(".aidlc/rules/aidlc-org.md", "aidlc/spaces/default/memory/org.md")
-    .replaceAll(".aidlc/rules/aidlc-team.md", "aidlc/spaces/default/memory/team.md")
-    .replaceAll(".aidlc/rules/aidlc-project.md", "aidlc/spaces/default/memory/project.md")
-    .replaceAll(".aidlc/rules/", "aidlc/spaces/default/memory/");
+    .replaceAll(".aidlc/rules/aidlc-org.md", "aidlc/active-memory/org.md")
+    .replaceAll(".aidlc/rules/aidlc-team.md", "aidlc/active-memory/team.md")
+    .replaceAll(".aidlc/rules/aidlc-project.md", "aidlc/active-memory/project.md")
+    .replaceAll(".aidlc/rules/", "aidlc/active-memory/")
+    .replaceAll("aidlc/spaces/<active-space>/memory/", "aidlc/active-memory/");
 }
 
 function projectCursorNativeAgent({ file, content }: CopyContext): string {
@@ -772,7 +969,64 @@ function disallowedToolsValues(content: string): string[] {
   ].map((match) => match[1].trim());
 }
 
-function projectKiroNativeAgent({ file, content }: CopyContext): string {
+// The frontmatter lines this install gives a plugin's agent: the dispatch
+// surface its own personas carry, from the file the packager writes for the row
+// (manifest-types.ts pluginAgentFrontmatter). An install without it gives none.
+let _pluginAgentLines: string[] | null = null;
+function pluginAgentLines(): string[] {
+  if (_pluginAgentLines) return _pluginAgentLines;
+  let lines: string[] = [];
+  try {
+    const raw = readFileSync(join(HARNESS_DIR, "tools", "data", "plugin-agent.md"), "utf-8").replace(/^\uFEFF/, "");
+    const block = frontmatter(raw);
+    if (block) lines = block.split(/\r?\n/);
+  } catch {
+    // An install that predates the file.
+  }
+  _pluginAgentLines = lines;
+  return lines;
+}
+
+const topLevelKey = (line: string): string | null => line.match(/^([A-Za-z_][\w-]*):/)?.[1] ?? null;
+
+// The install's lines an agent gets, by key: an author's own key stays theirs.
+// The tools line, which grants the shell, comes only with the install's
+// permissions, whose deny keeps a delegate off the engine commands the guard
+// refuses it; beside the author's own permissions the tools are theirs to name.
+function pluginAgentDispatchLines(declared: ReadonlySet<string>): string[] {
+  const out: string[] = [];
+  let take = false;
+  for (const line of pluginAgentLines()) {
+    const key = topLevelKey(line);
+    if (key !== null) {
+      take = key === "tools"
+        ? !declared.has("tools") && !declared.has("permissions")
+        : !declared.has(key);
+    }
+    if (take) out.push(line);
+  }
+  return out;
+}
+
+// Why Kiro's agent roster cannot take this plugin agent file, or null.
+function kiroNativeAgentRefusal(rel: string, content: string): string | null {
+  if (!content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/)) {
+    return `plugin "${PLUGIN_NAME}" agent file "${rel}" has no closed frontmatter block; not copied to Kiro's agent roster`;
+  }
+  const disallowed = disallowedToolsValues(content);
+  if (disallowed.length > 1) {
+    return `plugin "${PLUGIN_NAME}" agent file "${rel}" declares multiple disallowedTools lines; Kiro accepts at most one disallowedTools: Task line; not copied`;
+  }
+  if (disallowed.length === 1 && !/^Task$/i.test(disallowed[0])) {
+    return `plugin "${PLUGIN_NAME}" agent file "${rel}" cannot project disallowedTools "${disallowed[0]}" to Kiro; not copied`;
+  }
+  return null;
+}
+
+// A plugin agent as Kiro installs it: without the Claude-only disallowedTools
+// and, unless `dispatch` is false (the copy the inline lead reads), with the
+// install's dispatch lines. The frontmatter is written LF.
+function projectKiroNativeAgent({ file, content }: CopyContext, dispatch = true): string {
   const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
   if (!m) throw new Error(`${file}: plugin agent has no closed frontmatter block`);
   const disallowed = disallowedToolsValues(content);
@@ -782,55 +1036,51 @@ function projectKiroNativeAgent({ file, content }: CopyContext): string {
   ) {
     throw new Error(`${file}: Kiro cannot project this disallowedTools declaration`);
   }
-  const fm = m[1]
+  const own = m[1]
     .split(/\r?\n/)
-    .filter((line) => !/^disallowedTools:/.test(line))
-    .join("\n");
+    .filter((line) => !/^disallowedTools:/.test(line));
+  const declared = new Set(own.map(topLevelKey).filter((key): key is string => key !== null));
+  const fm = [...own, ...(dispatch ? pluginAgentDispatchLines(declared) : [])].join("\n");
   return content.replace(m[0], () => `---\n${fm}\n---\n`);
 }
 
 function kiroNativeAgentPrecheck(): CopyPrecheck {
   return (ctx) => {
-    if (!ctx.content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/)) {
-      recordDrop(
-        `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" has no closed frontmatter block; not copied to Kiro's agent roster`,
-      );
-      return false;
-    }
-    const disallowed = disallowedToolsValues(ctx.content);
-    if (disallowed.length > 1) {
-      recordDrop(
-        `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" declares multiple disallowedTools lines; Kiro accepts at most one disallowedTools: Task line; not copied`,
-      );
-      return false;
-    }
-    if (disallowed.length === 1 && !/^Task$/i.test(disallowed[0])) {
-      recordDrop(
-        `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" cannot project disallowedTools "${disallowed[0]}" to Kiro; not copied`,
-      );
-      return false;
-    }
-    return true;
+    const refusal = kiroNativeAgentRefusal(ctx.rel, ctx.content);
+    if (refusal) recordDrop(refusal);
+    return refusal === null;
   };
+}
+
+// An installed copy of a plugin agent that is this plugin's own older copy,
+// though no record says so: the plugin's source as it was before Kiro's
+// projection, or a projection from before this install's dispatch lines (a
+// project composed before the ownership record, on 2.11.0 or earlier).
+function olderKiroAgentCopy(installed: Buffer, content: string, file: string): boolean {
+  const text = installed.toString("utf-8");
+  if (frontmatterScalar(content, "plugin") !== PLUGIN_NAME || frontmatterScalar(text, "plugin") !== PLUGIN_NAME) {
+    return false;
+  }
+  if (text === content && disallowedToolsValues(content).length > 0) return true;
+  if (pluginAgentLines().length === 0) return false;
+  try {
+    return committedText(installed).equals(
+      committedText(Buffer.from(projectKiroNativeAgent({ file, rel: file, content }, false))),
+    );
+  } catch {
+    return false;
+  }
 }
 
 function migrateExistingKiroAgent(
   ctx: CopyContext & { dest: string; installed: Buffer },
 ): ExistingCopyAction {
   if (!ctx.file.endsWith(".md")) return "compare";
-  const installed = ctx.installed.toString("utf-8");
   // This migration is deliberately narrower than ordinary plugin upgrades:
-  // only an unchanged pre-projection copy owned by this plugin is rewritten.
-  // User edits, core files, and another plugin's files stay under no-clobber.
-  if (
-    installed !== ctx.content ||
-    frontmatterScalar(ctx.content, "plugin") !== PLUGIN_NAME ||
-    frontmatterScalar(installed, "plugin") !== PLUGIN_NAME
-  ) {
-    return "compare";
-  }
+  // only this plugin's own unchanged older copy is rewritten. User edits, core
+  // files, and another plugin's files stay under no-clobber.
+  if (!olderKiroAgentCopy(ctx.installed, ctx.content, ctx.file)) return "compare";
   const disallowed = disallowedToolsValues(ctx.content);
-  if (disallowed.length === 0) return "compare";
   if (disallowed.length > 1) {
     const installedRel = relative(PROJECT_DIR, ctx.dest).replace(/\\/g, "/");
     recordDrop(
@@ -838,14 +1088,17 @@ function migrateExistingKiroAgent(
     );
     return "handled";
   }
-  if (!/^Task$/i.test(disallowed[0])) {
+  if (disallowed.length === 1 && !/^Task$/i.test(disallowed[0])) {
     const installedRel = relative(PROJECT_DIR, ctx.dest).replace(/\\/g, "/");
     recordDrop(
       `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" is already composed with unsupported disallowedTools "${disallowed[0]}"; fix the plugin source, remove "${installedRel}", and re-run compose`,
     );
     return "handled";
   }
-  writeComposeFile(ctx.dest, projectKiroNativeAgent(ctx));
+  const projected = projectKiroNativeAgent(ctx);
+  // An agent whose own keys leave nothing to add is already this copy.
+  if (committedText(ctx.installed).equals(committedText(Buffer.from(projected)))) return "compare";
+  writeComposeFile(ctx.dest, projected);
   return "written";
 }
 
@@ -986,7 +1239,7 @@ async function unsupportedRuntimeModePrecheck(): Promise<CopyPrecheck> {
     };
   };
 
-  // copyTreeNoClobber skips prechecks when the destination exists. Audit
+  // copyTreeNoClobber runs no precheck on an existing destination it keeps. Audit
   // installed reserved modes up front so upgrades cannot leave one silently.
   const stagesRoot = join(PLUGIN_ROOT, "stages");
   for (const file of walk(stagesRoot).filter((path) => path.endsWith(".md"))) {
@@ -1135,13 +1388,16 @@ function validIdePermissionRule(
         : blockYamlListHasValue(lines, i + 1, indent, end);
     }
   }
-  return Boolean(capability && (effect === "allow" || effect === "deny") && match);
+  return Boolean(capability && (effect === "allow" || effect === "ask" || effect === "deny") && match);
 }
 
 // Kiro IDE dispatches Markdown agents only when their frontmatter carries a
 // non-empty tools grant and a permissions.rules list made entirely of
-// capability/effect/match entries. Fail closed on empty maps/lists and partial
-// entries: those files exist but do not grant a usable dispatch surface.
+// capability/effect/match entries whose effect is allow, ask, or deny. Core's
+// own personas carry all three: ask keeps the engine commands that change a
+// setting asking the person. Fail closed on empty maps/lists, partial entries,
+// and any other effect: those files exist but do not grant a usable dispatch
+// surface.
 function installedIdeAgentIsDispatchable(agentsDir: string, agent: string): boolean {
   let content = "";
   try {
@@ -1149,6 +1405,10 @@ function installedIdeAgentIsDispatchable(agentsDir: string, agent: string): bool
   } catch {
     return false;
   }
+  return ideAgentIsDispatchable(content);
+}
+
+function ideAgentIsDispatchable(content: string): boolean {
   const fm = frontmatter(content);
   if (!fm) return false;
   const lines = fm.split(/\r?\n/);
@@ -1203,10 +1463,39 @@ function installedIdeAgentIsDispatchable(agentsDir: string, agent: string): bool
   );
 }
 
+// The copy of a plugin's own agent this compose writes to agentsDir, or null
+// when it writes none: the plugin ships no such agent, the installed file is
+// one the copy keeps (someone else's, or a copy the person changed), or the
+// copy refuses the agent (its frontmatter, its plugin identity, or a name
+// another installed agent already has).
+function pluginKiroAgentCopy(agentsDir: string, agent: string): string | null {
+  const source = join(PLUGIN_ROOT, "agents", `${agent}.md`);
+  const rel = `${agent}.md`;
+  const dest = join(agentsDir, rel);
+  let content: string;
+  try {
+    content = projectPluginTokens(readFileSync(source, "utf-8"), HARNESS_LEAF);
+  } catch {
+    return null;
+  }
+  if (kiroNativeAgentRefusal(rel, content) !== null) return null;
+  if (installedNameRefusal(installedNameRoster(agentsDir), "agents", { file: source, dest, content }) !== null) return null;
+  const projected = projectKiroNativeAgent({ file: source, rel, content });
+  // The agents copy (copyTreeNoClobber with migrateExistingKiroAgent) keeps an
+  // installed file unless it is this plugin's own older or unchanged copy.
+  if (existsSync(dest)) {
+    const installed = readFileSync(dest);
+    const kept = !olderKiroAgentCopy(installed, content, source) &&
+      !["same", "replace"].includes(installedCopyAction(installed, Buffer.from(projected), dest));
+    if (kept) return null;
+  }
+  return projected;
+}
+
 // Kiro CLI, Kiro IDE, Codex, OpenCode, and Copilot each require a native
 // dispatch surface. The two Kiro variants share .kiro but are distinguished by
-// the recorded harness name: CLI uses agent-v1 JSON + trustedAgents, while IDE
-// uses capability-bearing Markdown and never reads the CLI conductor JSON.
+// the tree's layout (KIRO_KAS_LAYOUT): agent-v1 uses JSON + trustedAgents, while
+// KAS uses capability-bearing Markdown and never reads the CLI conductor JSON.
 async function kiroPluginAgentPrechecks(): Promise<KiroPluginAgentPrechecks | null> {
   if (
     HARNESS_LEAF !== ".kiro" &&
@@ -1215,7 +1504,7 @@ async function kiroPluginAgentPrechecks(): Promise<KiroPluginAgentPrechecks | nu
   ) {
     return null;
   }
-  const isKiroIde = HARNESS_NAME === "kiro-ide";
+  const isKiroIde = KIRO_KAS_LAYOUT;
   const isKiroCli = HARNESS_LEAF === ".kiro" && !isKiroIde;
   const surfaceExt = isKiroIde
     ? ".md"
@@ -1364,10 +1653,13 @@ async function kiroPluginAgentPrechecks(): Promise<KiroPluginAgentPrechecks | nu
     const gaps = new Map<string, DispatchGap>();
     for (const agent of dispatchedAgents) {
       if (!agent || gaps.has(agent)) continue;
+      // The agents copy runs after this check, so a plugin's own agent is
+      // judged on the copy it is about to write.
+      const pluginCopy = isKiroIde ? pluginKiroAgentCopy(surfaceDir, agent) : null;
       const gap = {
         agent,
         missingSurface: isKiroIde
-          ? !installedIdeAgentIsDispatchable(surfaceDir, agent)
+          ? !(pluginCopy === null ? installedIdeAgentIsDispatchable(surfaceDir, agent) : ideAgentIsDispatchable(pluginCopy))
           : !existsSync(join(surfaceDir, `${agent}${surfaceExt}`)) &&
             !(HARNESS_LEAF === ".aidlc" && pluginShipsViableNativeAgent(agent)),
         missingTrust: isKiroCli && !trustedAgents.has(agent),
@@ -1471,14 +1763,27 @@ async function installedStageSchemaPrecheck(): Promise<CopyPrecheck> {
   };
 }
 
+// What a copy does with a file already at its destination, given the copy it
+// would write there (null when it can write none): keep it ("same", the copy
+// as committed), replace it (this plugin's own copy, unchanged since it was
+// installed), or leave it, whether nothing records it as the plugin's
+// ("unrecorded") or the person changed it ("changed").
+function installedCopyAction(installed: Buffer, current: Buffer | null, dest: string): "same" | "replace" | "unrecorded" | "changed" {
+  if (current !== null && committedText(installed).equals(committedText(current))) return "same";
+  const recorded = priorOwned().get(projectRelPosix(dest));
+  if (recorded === undefined) return current !== null && sameButKnowledgePreflight(installed, current) ? "replace" : "unrecorded";
+  return recordedDigestMatches(installed, recorded) ? "replace" : "changed";
+}
+
 // No-clobber copy of one tree into another, with {{HARNESS_DIR}} substitution on
-// .md prose. NEVER overwrites an existing dest (portable no-clobber — the point
-// of the former `cp -n`, done right). Returns true if anything was written.
-// `kind` labels the tree for the collision drop-log: a
+// .md prose. Never overwrites core, another plugin, or a copy the person changed;
+// the one existing dest it replaces is this plugin's own earlier copy, unchanged
+// since it was installed. Returns true if anything was written.
+// `kind` labels the tree for the collision drop-log: any other
 // dest that already exists with DIFFERENT content is a real collision (a plugin
 // trying to ship a file that shadows core or another plugin) and is dropped-with-
-// log — silently skipping it made a plugin "override" a no-op with no evidence
-// (round-4). An identical dest is a benign idempotent re-run (no log).
+// log: silently skipping it made a plugin "override" a no-op with no evidence.
+// An identical dest is a benign idempotent re-run (no log).
 function copyTreeNoClobber(
   src: string,
   dst: string,
@@ -1495,13 +1800,17 @@ function copyTreeNoClobber(
     const dest = join(dst, rel);
     let buf = readFileSync(file);
     if (file.endsWith(".md")) {
-      buf = Buffer.from(buf.toString("utf-8").replaceAll("{{HARNESS_DIR}}", HARNESS_LEAF));
+      buf = Buffer.from(projectPluginTokens(buf.toString("utf-8"), HARNESS_LEAF));
     }
+    // The plugin's own earlier copy, unchanged since it was installed, that this
+    // run replaces; put back if a precheck refuses the new copy.
+    let replacing: Buffer | null = null;
     if (existsSync(dest)) {
-      // no-clobber — never replace core/another plugin. Log only a genuine
-      // content collision, not an identical idempotent re-copy. The installed
-      // copy was written transformed, so transform before comparing; a source
-      // the transform rejects cannot equal any installed copy.
+      // no-clobber: never replace core, another plugin, or a copy the person
+      // changed. Log only a genuine content collision, not an identical
+      // idempotent re-copy. The installed copy was written transformed, so
+      // transform before comparing; a source the transform rejects cannot equal
+      // any installed copy.
       const installed = readFileSync(dest);
       const existingAction = existingHandler?.({
         file,
@@ -1512,6 +1821,7 @@ function copyTreeNoClobber(
       }) ?? "compare";
       if (existingAction === "written") {
         composedPaths?.add(rel.replace(/\\/g, "/"));
+        ownedThisRun.set(projectRelPosix(dest), sha256Of(readFileSync(dest)));
         wrote = true;
         continue;
       }
@@ -1524,12 +1834,24 @@ function copyTreeNoClobber(
           current = null;
         }
       }
-      if (current !== null && installed.equals(current)) {
+      const action = installedCopyAction(installed, current, dest);
+      if (action === "same") {
         composedPaths?.add(rel.replace(/\\/g, "/"));
-      } else {
-        recordDrop(`${kind} "${rel}" collides with an existing file (core or another plugin); not overwritten — rename it to a plugin-namespaced path`);
+        ownedThisRun.set(projectRelPosix(dest), sha256Of(installed));
+        continue;
       }
-      continue;
+      if (action === "unrecorded") {
+        recordDrop(`${kind} "${rel}" collides with an existing file this plugin has no record of installing (core, another plugin, an older copy of this plugin, or a local edit); not overwritten - if it is this plugin's older copy, remove it and re-run compose; if it is core's or another plugin's, rename yours to a plugin-namespaced path`);
+        continue;
+      }
+      if (action === "changed") {
+        recordDrop(`${kind} "${rel}" was changed after this plugin installed it; not overwritten - to take the plugin's current copy, move your change elsewhere, remove the file, and re-run compose`);
+        continue;
+      }
+      // Remove the old copy first so the prechecks below judge a fresh copy,
+      // exactly as they would on a first install.
+      replacing = installed;
+      removeComposeFile(dest);
     }
     // Precheck BEFORE transform, on the pre-transform text: the precheck is
     // the skip-and-drop gate for exactly the shapes a transform throws on
@@ -1537,13 +1859,17 @@ function copyTreeNoClobber(
     // first turns a one-file drop into an aborted compose. It also keeps the
     // precheck's shape checks live — the emitter strips disallowedTools, so a
     // post-transform precheck could never reject an un-projectable value.
-    if (precheck && !precheck({ file, rel, dest, content: buf.toString("utf-8") })) continue;
+    if (precheck && !precheck({ file, rel, dest, content: buf.toString("utf-8") })) {
+      if (replacing) writeComposeFile(dest, replacing);
+      continue;
+    }
     if (transform) {
       buf = Buffer.from(transform({ file, rel, content: buf.toString("utf-8") }));
     }
     mkdirSync(join(dest, ".."), { recursive: true });
     writeComposeFile(dest, buf);
     composedPaths?.add(rel.replace(/\\/g, "/"));
+    ownedThisRun.set(projectRelPosix(dest), sha256Of(buf));
     wrote = true;
   }
   return wrote;
@@ -1557,17 +1883,77 @@ function findStageFile(slug: string): string | null {
   return null;
 }
 
+// Personas are a flat directory; a contribution under contributions/agents/
+// targets one by its slug (the file stem, which equals the frontmatter name).
+function findAgentFile(slug: string): string | null {
+  const p = join(HARNESS_DIR, "agents", `${slug}.md`);
+  return existsSync(p) ? p : null;
+}
+
+// The harness-native twins of a core persona: the files a harness's own
+// dispatch reads instead of the Markdown persona, built from it at package
+// time (the Codex agent TOML, the opencode and Copilot native agents), and the
+// Kiro IDE persona without its tool permissions, which the inline lead reads.
+// They take the same fragments, so a plugin's instruction reaches the agent on
+// every harness. Kiro CLI's agent JSON loads its prompt from the Markdown
+// persona, and the other harnesses dispatch from it directly.
+function personaTwinFiles(slug: string): Array<{ path: string; toml: boolean }> {
+  const twin = HARNESS_LEAF === ".codex"
+    ? { path: join(HARNESS_DIR, "agents", `${slug}.toml`), toml: true }
+    : HARNESS_LEAF === ".aidlc"
+      ? { path: join(nativeAgentsDir(), `${slug}.md`), toml: false }
+      : HARNESS_LEAF === ".kiro"
+        ? { path: join(HARNESS_DIR, "aidlc-common", "personas", `${slug}.md`), toml: false }
+        : null;
+  return twin && existsSync(twin.path) ? [twin] : [];
+}
+
+// A Codex twin holds the persona in one TOML multi-line basic string
+// (developer_instructions). Fragment work runs on that string's text, so every
+// anchor resolves inside it; null when the file has no such string.
+function editTomlInstructions(content: string, edit: (body: string) => string): string | null {
+  const open = /^developer_instructions = """\n/m.exec(content);
+  if (!open) return null;
+  const start = open.index + open[0].length;
+  const end = content.indexOf('"""', start);
+  if (end === -1 || content[end - 1] !== "\n") return null;
+  const body = edit(content.slice(start, end));
+  return content.slice(0, start) + (body.endsWith("\n") ? body : `${body}\n`) + content.slice(end);
+}
+
+// Fragment prose inside that string: a backslash or a run of three quotes
+// would change or end it, so both are escaped (TOML reads them back as written).
+function tomlBasicText(prose: string): string {
+  return prose.replace(/\\/g, "\\\\").replace(/"""/g, '\\"\\"\\"');
+}
+
+// Cut one sentinel-marked block together with the separator spliceFragment
+// inserted with it, and nothing else, so the file's own bytes survive: a block
+// owns the blank line to the block after it, else the one from the block
+// before it, else its two surrounding newlines. The same rule as
+// cutPluginFragment in aidlc-plugin.ts, which disable and prune use.
+function cutFragmentBlock(content: string, start: number, end: number): string {
+  if (content.startsWith("\n\n<!-- plugin:", end)) return content.slice(0, start) + content.slice(end + 2);
+  const before = content.slice(0, start);
+  const previousClose = before.lastIndexOf("<!-- /plugin:");
+  if (previousClose !== -1 && /^<!-- \/plugin:[^\n]* -->\n\n$/.test(before.slice(previousClose))) {
+    return content.slice(0, start - 2) + content.slice(end);
+  }
+  const from = content[start - 1] === "\n" ? start - 1 : start;
+  const to = content[end] === "\n" ? end + 1 : end;
+  return content.slice(0, from) + content.slice(to);
+}
+
 // Read half: a single frontmatter split (LF/CRLF tolerant) shared by every read
-// in this file — after the three-file fold there is one parser here, not two, so
-// a robustness fix lands once (review #8). Contribution frontmatter is a distinct
-// shape (target/adds/fragments) from stage frontmatter, so it stays local rather
+// in this file, so a robustness fix lands once. Contribution frontmatter is a
+// distinct shape (target/adds/fragments) from stage frontmatter, so it stays local rather
 // than importing aidlc-lib's stage parser.
 function frontmatter(content: string): string {
   return content.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
 }
 
 // Append items to a top-level list field, or replace the inline-empty `field: []`
-// form with a block (fixes the silent-drop asymmetry, review #5). Idempotent.
+// form with a block. Idempotent.
 // Returns the (possibly unchanged) content; logs when a field is absent entirely.
 // `added` (when given) collects the values THIS call actually wrote - the
 // contribution sidecar records actually-added entries, never declared ones, so
@@ -1579,6 +1965,17 @@ function mergeListField(content: string, field: string, items: string[], target:
   if (emptyRe.test(content)) {
     added?.push(...items);
     return content.replace(emptyRe, `${field}:\n` + items.map((i) => `  - ${i}`).join("\n"));
+  }
+  // A non-empty inline flow list (`field: [a, b]`) is rewritten as a block so
+  // the additions land like every other merge.
+  const flowRe = flowListRe(field);
+  const flow = content.match(flowRe);
+  if (flow) {
+    const existing = flowListValues(flow[1]);
+    const toAdd = items.filter((i) => !existing.includes(i));
+    if (toAdd.length === 0) return content;
+    added?.push(...toAdd);
+    return content.replace(flowRe, `${field}:\n` + [...existing, ...toAdd].map((i) => `  - ${i}`).join("\n"));
   }
   const blockRe = new RegExp(`^(${field}:\\n(?:  - .+\\n)*)`, "m");
   const m = content.match(blockRe);
@@ -1595,6 +1992,48 @@ function mergeListField(content: string, field: string, items: string[], target:
   if (toAdd.length === 0) return content;
   added?.push(...toAdd);
   return content.replace(blockRe, m[1] + toAdd.map((i) => `  - ${i}`).join("\n") + "\n");
+}
+
+// A top-level inline flow list with at least one entry: `field: [a, b]`.
+function flowListRe(field: string): RegExp {
+  return new RegExp(`^${field}:[ \\t]*\\[(.*\\S.*)\\][ \\t]*$`, "m");
+}
+function flowListValues(raw: string): string[] {
+  return raw.split(",").map((item) => yamlScalarValue(item)).filter((value): value is string => Boolean(value));
+}
+
+// A stage's own `requires_stage:` entries, block or inline-flow form.
+function stageRequires(content: string): string[] {
+  const fm = frontmatter(content.replace(/\r\n/g, "\n"));
+  const flow = fm.match(flowListRe("requires_stage"));
+  if (flow) return flowListValues(flow[1]);
+  return [...(fm.match(/^requires_stage:\n((?:[ \t]+- .+\n?)*)/m)?.[1] ?? "").matchAll(/^[ \t]+- (.+)$/gm)]
+    .map((x) => yamlScalarValue(x[1]))
+    .filter((value): value is string => Boolean(value));
+}
+
+// Remove items from a top-level list field (block or flow form), leaving
+// `field: []` when none remain. The inverse of mergeListField.
+function removeListField(content: string, field: string, items: readonly string[]): string {
+  if (items.length === 0) return content;
+  const flowRe = flowListRe(field);
+  const flow = content.match(flowRe);
+  if (flow) {
+    const values = flowListValues(flow[1]);
+    const kept = values.filter((value) => !items.includes(value));
+    if (kept.length === values.length) return content;
+    return content.replace(flowRe, `${field}: [${kept.join(", ")}]`);
+  }
+  const blockRe = new RegExp(`^(${field}:\\n(?:  - .+\\n)*)`, "m");
+  const m = content.match(blockRe);
+  if (!m) return content;
+  const lines = [...m[1].matchAll(/^ {2}- (.+)$/gm)];
+  const kept = lines.filter((x) => !items.includes(yamlScalarValue(x[1]) ?? ""));
+  if (kept.length === lines.length) return content;
+  return content.replace(
+    blockRe,
+    kept.length > 0 ? `${field}:\n${kept.map((x) => x[0]).join("\n")}\n` : `${field}: []\n`,
+  );
 }
 
 // Append consumes objects (artifact + required + optional conditional_on).
@@ -1614,7 +2053,7 @@ function mergeConsumes(content: string, entries: ConsumeEntry[], target: string,
   // (`required:`, `conditional_on:`). Matching those continuations is what keeps
   // an append AFTER the last core entry — omit `conditional_on` and the block
   // ends early, splicing the new entry INSIDE a core entry and stealing its
-  // brownfield gate (round-2 major). The new entries land past the whole block.
+  // brownfield gate. The new entries land past the whole block.
   const blockRe = /^(consumes:\n(?: {2}- artifact:.*\n(?: {4}(?:required|conditional_on):.*\n)*)*)/m;
   const m = content.match(blockRe);
   if (!m) {
@@ -1654,7 +2093,7 @@ function mergeRequiredSections(content: string, items: string[], target: string,
   // Field absent — insert it just before the closing frontmatter `---`. The
   // closing fence may be followed by a newline OR sit at EOF (a stage file with
   // no trailing newline is valid) — `(?:\n|$)` tolerates both; requiring `\r?\n`
-  // after `---` silently dropped the whole merge on a newline-less file (round-4).
+  // after `---` silently dropped the whole merge on a newline-less file.
   const fmClose = content.match(/^---\r?\n[\s\S]*?\n(---)(?:\r?\n|$)/);
   if (!fmClose) {
     recordDrop(`contribution to ${target}: cannot add required_sections (no frontmatter block)`);
@@ -1667,10 +2106,10 @@ function mergeRequiredSections(content: string, items: string[], target: string,
 }
 
 // Resolve a fragment anchor to a char offset. Anchors are validated + escaped
-// (review #6) — a malformed anchor is skipped-with-log, never a thrown regex. A
+// so a malformed anchor is skipped-with-log, never a thrown regex. A
 // valid anchor whose target heading is ABSENT also returns -1 but logs a distinct
-// "not found" drop (round-4: the not-found case was silent, so a contribution's
-// frontmatter `adds` landed while its prose vanished — a half-applied merge).
+// "not found" drop (a silent not-found would let a contribution's
+// frontmatter `adds` land while its prose vanished: a half-applied merge).
 function locateAnchor(content: string, anchor: string, target: string): number {
   const stepAnchor = (kind: "after" | "before"): number => {
     const n = anchor.slice(anchor.indexOf(":") + 1);
@@ -1708,6 +2147,20 @@ function locateAnchor(content: string, anchor: string, target: string): number {
     const next = content.slice(from).search(/^## /m);
     return next === -1 ? content.length : from + next;
   }
+  if (anchor === "after-preflight") {
+    // Personas: right after the delegated-knowledge preflight the packager
+    // injects at build time — its marker line and the one paragraph below it.
+    const m = content.match(KNOWLEDGE_PREFLIGHT);
+    if (!m) { recordDrop(`contribution to ${target}: anchor "after-preflight" — no delegated-knowledge preflight block found (the target must be a persona); prose dropped`); return -1; }
+    return m.index! + m[0].length;
+  }
+  if (anchor === "end-of-body") {
+    // The end of the authored body. Reviewer personas end with knowledge the
+    // packager absorbs at build time; the fragment lands before that section
+    // so the absorbed text stays last.
+    const absorbed = content.indexOf("\n---\n\n<!-- Absorbed at build time");
+    return absorbed === -1 ? content.length : absorbed;
+  }
   recordDrop(`contribution to ${target}: unknown anchor "${anchor}"`);
   return -1;
 }
@@ -1732,18 +2185,24 @@ interface FragmentRecord { anchor: string; order: number; hash: string; }
 // its correct (order, plugin) slot among peer plugin blocks at the same anchor —
 // so plugins composing in separate hook runs still interleave by (order, plugin),
 // never by hook-firing order. Never relies on "the next heading" to bound a block.
-function spliceFragment(content: string, f: Fragment, target: string): string {
+function spliceFragment(
+  content: string,
+  f: Fragment,
+  target: string,
+  // How the prose is written into this file (a Codex twin escapes it); the
+  // hash is always over the prose itself, so every file carries one marker.
+  encode: (prose: string) => string = (prose) => prose,
+): string {
   const hash = hashProse(f.prose);
   const pE = escapeRegExp(f.plugin), aE = escapeRegExp(f.anchor);
   // The close marker carries the SAME content hash as the open, so the block's
   // boundary is content-specific: a close-marker-lookalike line inside the prose
   // (which lacks the exact hash) can't be mistaken for the real close on an
-  // upgrade re-splice (round-5 — the old hashless close matched the first
-  // occurrence, so prose containing the marker corrupted the block).
+  // upgrade re-splice (a hashless close matches the first occurrence, so prose
+  // containing the marker would corrupt the block).
   const closeOf = (h: string) => `<!-- /plugin:${f.plugin}:${f.anchor}:${f.order}:${h} -->`;
-  const block = `<!-- plugin:${f.plugin}:${f.anchor}:${f.order}:${hash} -->\n${f.prose}\n${closeOf(hash)}`;
+  const block = `<!-- plugin:${f.plugin}:${f.anchor}:${f.order}:${hash} -->\n${encode(f.prose)}\n${closeOf(hash)}`;
 
-  // Present already? Skip on hash match; replace the whole block on hash change.
   const mine = content.match(new RegExp(`<!-- plugin:${pE}:${aE}:${f.order}:([0-9a-f]+) -->`));
   if (mine) {
     const start = mine.index!;
@@ -1775,7 +2234,6 @@ function spliceFragment(content: string, f: Fragment, target: string): string {
     return content.slice(0, lastEnd) + "\n\n" + block + content.slice(lastEnd);
   }
 
-  // Virgin anchor — use the structural locator for the base insertion point.
   const base = locateAnchor(content, f.anchor, target);
   if (base === -1) return content;
   return content.slice(0, base) + "\n" + block + "\n" + content.slice(base);
@@ -1842,6 +2300,7 @@ try {
         ? join(PLUGIN_ROOT, "aidlc", "agents")
         : join(PLUGIN_ROOT, "agents");
     changed = copyTreeNoClobber(join(PLUGIN_ROOT, "scopes"), scopesDir, "scopes", installedNameCollisionPrecheck(scopesDir, "scopes")) || changed;
+    const composedAgents = new Set<string>();
     changed = copyTreeNoClobber(
       pluginAgentsDir,
       agentsDir,
@@ -1859,7 +2318,20 @@ try {
             ? projectKiroNativeAgent
             : undefined,
       HARNESS_LEAF === ".kiro" ? migrateExistingKiroAgent : undefined,
+      composedAgents,
     ) || changed;
+    // Kiro IDE's dispatch lines are about 32 KB of tool permissions; the lead
+    // reading a plugin's persona in its own chat reads it without them, from
+    // the copy the inline roster prefers, as for core's personas.
+    if (HARNESS_LEAF === ".kiro" && pluginAgentLines().some((line) => topLevelKey(line) === "permissions")) {
+      changed = copyTreeNoClobber(
+        pluginAgentsDir,
+        join(HARNESS_DIR, "aidlc-common", "personas"),
+        "persona copy",
+        ({ rel }) => composedAgents.has(rel.replace(/\\/g, "/")),
+        (ctx) => projectKiroNativeAgent(ctx, false),
+      ) || changed;
+    }
     if (IS_OPENCODE) {
       const rosterDir = nativeAgentsDir();
       changed = copyTreeNoClobber(
@@ -1932,6 +2404,36 @@ try {
     combinePrechecks(toolsTestPayloadPrecheck(), doctorScriptOwnershipPrecheck()),
   ) || changed;
 
+  // Record what this plugin installed. Prior entries stay while their file
+  // exists (an edited file keeps the hash the plugin installed, so the next
+  // run can name the edit); entries for files that are gone drop out; this
+  // run's files win. Under sync the same record is rewritten afterwards from
+  // the staged project, in the same shape.
+  {
+    const files = new Map<string, string>();
+    for (const [path, sha] of priorOwned()) {
+      if (existsSync(join(PROJECT_DIR, path))) files.set(path, sha);
+    }
+    for (const [path, sha] of ownedThisRun) files.set(path, sha);
+    const record = `${JSON.stringify({
+      schemaVersion: 1,
+      name: PLUGIN_KEY,
+      files: [...files].sort(([a], [b]) => a.localeCompare(b)).map(([path, sha256]) => ({ path, sha256 })),
+    }, null, 2)}\n`;
+    try {
+      const current = existsSync(ownedRecordPath) ? readFileSync(ownedRecordPath, "utf-8") : null;
+      if (files.size > 0 && current !== record) {
+        mkdirSync(dirname(ownedRecordPath), { recursive: true });
+        writeComposeFile(ownedRecordPath, record);
+      }
+    } catch (e) {
+      recordDrop(
+        `could not write the plugin file record ${relative(PROJECT_DIR, ownedRecordPath)}: ${e instanceof Error ? e.message : String(e)} - the next compose cannot tell this plugin's own older copies from local edits`,
+        "advisory",
+      );
+    }
+  }
+
   // 2. Merge contributions into stage SOURCE (structural + prose fragments).
   // Probe ONCE whether the installed engine accepts required_sections — writing
   // it into a stage an older engine can't parse would break every later compile.
@@ -1942,8 +2444,8 @@ try {
   // fragment records let doctor verify sentinel-marked prose after an engine
   // reinstall. Accumulated across re-runs: structural entries are unioned, while
   // a fragment upgrade replaces the prior hash for its (anchor, order) identity.
-  type StageContribRecord = { produces?: string[]; sensors?: string[]; consumes?: Array<string | ConsumeEntry>; scopes?: string[]; required_sections?: string[]; required_sections_created?: boolean; fragments?: FragmentRecord[] };
-  type StringContribField = "produces" | "sensors" | "scopes" | "required_sections";
+  type StageContribRecord = { produces?: string[]; sensors?: string[]; consumes?: Array<string | ConsumeEntry>; scopes?: string[]; requires_stage?: string[]; required_sections?: string[]; required_sections_created?: boolean; fragments?: FragmentRecord[] };
+  type StringContribField = "produces" | "sensors" | "scopes" | "requires_stage" | "required_sections";
   const contribManifestPath = join(HARNESS_DIR, "tools", "data", `plugin-contrib-${PLUGIN_KEY}.json`);
   let contribManifestLoadError: string | null = null;
   const contribManifest: Record<string, StageContribRecord> = (() => {
@@ -1984,6 +2486,21 @@ try {
     );
     for (const v of values) prior.add(v);
     (rec[field] as string[]) = [...prior].sort();
+  };
+  // The inverse of recordContrib for values a prior compose recorded. A record
+  // left with no contribution is deleted: doctor and plugin sync refuse one.
+  const retireContrib = (target: string, field: StringContribField, values: string[]): void => {
+    const rec = contribManifest[target];
+    const existing = rec?.[field];
+    if (!Array.isArray(existing)) return;
+    const kept = existing.filter((value) => !values.includes(value));
+    if (kept.length === existing.length) return;
+    if (kept.length > 0) (rec[field] as string[]) = kept;
+    else delete rec[field];
+    contribManifestDirty = true;
+    if (!Object.values(rec).some((value) => Array.isArray(value) && value.length > 0)) {
+      delete contribManifest[target];
+    }
   };
   const recordConsumes = (target: string, values: ConsumeEntry[]): void => {
     if (values.length === 0) return;
@@ -2034,7 +2551,7 @@ try {
   };
   // Fragment keys seen across ALL contribution files this run, so a same
   // (target, plugin, anchor, order) arriving from a SECOND file drops-with-log
-  // rather than silently last-writer-winning via the hash-upgrade path (round-3).
+  // rather than silently last-writer-winning via the hash-upgrade path.
   const seenFragKeys = new Set<string>();
   // Contributions merge ONLY for an enabled plugin. Stage/scope/agent copies
   // are safe under a disabling selection (runtime loaders filter them), but
@@ -2058,17 +2575,148 @@ try {
   // this plugin's own scope files were already copied in above, and
   // contributions must not conjure new scope files.
   const installedScopes = installedNameRoster(join(HARNESS_DIR, "scopes"));
+  // Pinned stage numbers from the installed graph, for the adds.requires_stage
+  // ordering guard. A stage THIS compose is adding has no row yet (the compiler
+  // seeds it past its phase max), so an absent number is meaningful, not an
+  // error. null when the graph is absent or unreadable.
+  const installedNumbers = (() => {
+    try {
+      const rows = JSON.parse(readFileSync(join(HARNESS_DIR, "tools", "data", "stage-graph.json"), "utf-8")) as Array<{ slug?: string; number?: string }>;
+      const numbers = new Map<string, [number, number]>();
+      for (const row of rows) {
+        const [prefix, index] = (row.number ?? "").split(".").map((n) => parseInt(n, 10));
+        if (row.slug && Number.isFinite(prefix) && Number.isFinite(index)) numbers.set(row.slug, [prefix, index]);
+      }
+      return numbers;
+    } catch {
+      return null;
+    }
+  })();
+  const pinnedNumber = (slug: string): [number, number] | null => installedNumbers?.get(slug) ?? null;
+  const phasePrefix = (stageFile: string): number => PHASES.indexOf(basename(dirname(stageFile)));
+  // Whether `from` reaches `to` through the requires_stage edges of the
+  // unpinned stages in phase `prefix`: the batch the compiler seeds in edge
+  // order, and rejects when those edges form a cycle.
+  const reachesThroughNewStages = (from: string, to: string, prefix: number): boolean => {
+    const seen = new Set<string>();
+    const queue = [from];
+    while (queue.length > 0) {
+      const slug = queue.shift()!;
+      if (slug === to) return true;
+      if (seen.has(slug)) continue;
+      seen.add(slug);
+      const file = findStageFile(slug);
+      if (!file || pinnedNumber(slug) !== null || phasePrefix(file) !== prefix) continue;
+      queue.push(...stageRequires(readFileSync(file, "utf-8")));
+    }
+    return false;
+  };
+  // adds.requires_stage guard: why an edge from `target` onto `dep` cannot
+  // hold, or null when it does. A refused edge is drop-logged, never merged —
+  // merged, it would fail the compiler's edge-local invariant and roll the
+  // whole compose back. The dependency must be an installed stage (core, or a
+  // plugin stage already on disk) other than the target, and must compile
+  // BEFORE it under the compiler's own rule: full pinned numbers compare
+  // (prefix, then index), a pinned row keeps its number even after its stage
+  // moves phase directory, and only an unpinned stage takes its prefix from
+  // its phase directory. A stage THIS compose adds is unpinned and seeds past
+  // its phase max, so an installed stage cannot require it within the same
+  // phase (RFC #1100 tracks ordering a plugin stage before a core one); two
+  // unpinned same-phase stages are seeded in edge order, so an edge between
+  // them holds unless it closes a cycle. An edge to a stage a scope skips is
+  // vacuous there, exactly like core's own edges across scopes.
+  const requiresRefusal = (target: string, targetFile: string, dep: string): string | null => {
+    if (dep === target) return "is the target itself";
+    const depFile = findStageFile(dep);
+    if (!depFile) return "names no installed stage (core or plugin)";
+    const targetNumber = pinnedNumber(target);
+    const depNumber = pinnedNumber(dep);
+    const targetPrefix = targetNumber?.[0] ?? phasePrefix(targetFile);
+    const depPrefix = depNumber?.[0] ?? phasePrefix(depFile);
+    const notLowerNumbered = (d: [number, number], t: [number, number]) =>
+      `(${d.join(".")}) is not lower-numbered than ${target} (${t.join(".")}); an edge must point at an earlier stage`;
+    if (depPrefix < targetPrefix) return null;
+    if (depPrefix > targetPrefix) {
+      return depNumber && targetNumber
+        ? notLowerNumbered(depNumber, targetNumber)
+        : `is in a later phase than ${target}; an edge must point at an earlier stage`;
+    }
+    if (!installedNumbers) {
+      return "is a same-phase edge and the installed stage graph is unreadable, so its ordering cannot be verified";
+    }
+    if (depNumber && targetNumber) {
+      return depNumber[1] < targetNumber[1] ? null : notLowerNumbered(depNumber, targetNumber);
+    }
+    if (depNumber) return null;
+    if (targetNumber) {
+      return `is a new same-phase stage that compiles after ${target} (new stages seed past the phase max), so the edge cannot hold — ordering a plugin stage before an installed one is RFC #1100`;
+    }
+    return reachesThroughNewStages(dep, target, targetPrefix)
+      ? `already requires ${target} through the new stages' own edges, so the edge would close a requires_stage cycle`
+      : null;
+  };
+  // Edges a PRIOR compose merged are re-checked before this run's
+  // contributions: a stage removed or renumbered since, or a contribution a
+  // newer plugin version dropped, would otherwise leave an edge the compile
+  // rejects and roll this whole compose back on every session start. A refused
+  // edge leaves the stage and this plugin's record; if a contribution still
+  // declares it, it merges again once it holds.
+  if (!contribManifestLoadError && pluginEnabledBySelection()) {
+    for (const [target, record] of Object.entries(contribManifest)) {
+      const stageFile = findStageFile(target);
+      if (!stageFile || !Array.isArray(record.requires_stage)) continue;
+      const retired = record.requires_stage.filter((dep) => {
+        const refusal = typeof dep === "string" ? requiresRefusal(target, stageFile, dep) : null;
+        if (refusal) recordDrop(`contribution to ${target}: previously merged requires_stage "${dep}" ${refusal}; removed`);
+        return refusal !== null;
+      });
+      if (retired.length === 0) continue;
+      const content = readFileSync(stageFile, "utf-8").replace(/\r\n/g, "\n");
+      const next = removeListField(content, "requires_stage", retired);
+      if (next !== content) {
+        writeComposeFile(stageFile, next);
+        changed = true;
+      }
+      retireContrib(target, "requires_stage", retired);
+    }
+  }
+  // The core persona roster the plugin validator checks targets against,
+  // shipped with the installed engine; null on an engine that predates it or
+  // a damaged install.
+  const coreAgentRoster = (() => {
+    try {
+      const { agents } = JSON.parse(readFileSync(join(HARNESS_DIR, "tools", "data", "plugin-authoring-context.json"), "utf-8")) as { agents?: unknown };
+      return Array.isArray(agents) && agents.every((agent) => typeof agent === "string") ? new Set<string>(agents) : null;
+    } catch {
+      return null;
+    }
+  })();
+  // Compose reads contributions/<phase-or-agents>/<file>.md, one level deep:
+  // a file placed higher or a directory nested lower is reported, not skipped
+  // silently.
+  const isDirectory = (path: string): boolean => {
+    try { return statSync(path).isDirectory(); } catch { return false; }
+  };
   for (const phase of contribPhases) {
     const phaseDir = join(contribRoot, phase);
+    if (!isDirectory(phaseDir)) {
+      if (phase.endsWith(".md")) recordDrop(`contribution file "contributions/${phase}" sits outside a phase or agents directory and was not read; move it to contributions/<phase>/ or contributions/agents/`);
+      continue;
+    }
     let files: string[];
     try { files = readdirSync(phaseDir); } catch { continue; }
     for (const file of files) {
+      // A directory is never read, whatever its name (a "x.md" directory too).
+      if (isDirectory(join(phaseDir, file))) {
+        recordDrop(`contribution directory "contributions/${phase}/${file}/" is nested too deep and was not read; move its files up to contributions/${phase}/`);
+        continue;
+      }
       if (!file.endsWith(".md")) continue;
       // Normalize CRLF once so every downstream block/list regex is newline-safe;
       // strip a leading UTF-8 BOM and any leading blank lines so the `^---`
       // frontmatter anchor still matches a file saved with a BOM (common on
       // Windows) or a stray blank first line — otherwise the whole contribution
-      // was silently skipped with no drop (round-5).
+      // was silently skipped with no drop.
       const content = readFileSync(join(phaseDir, file), "utf-8")
         .replace(/\r\n/g, "\n").replace(/^﻿/, "").replace(/^\n+/, "");
       const fm = frontmatter(content);
@@ -2077,6 +2725,11 @@ try {
       // contribution — log it (a present-but-unknown target is already logged
       // below; a missing one was a silent bare continue).
       if (!target) { recordDrop(`contribution "${file}" has no parseable frontmatter target: — skipped (check for a BOM, a leading blank line, or a missing target: key)`); continue; }
+      // The target is interpolated into a path under the harness dir, so it
+      // must be a bare slug: no separators, no traversal. A contribution can
+      // only ever reach <harness>/aidlc-common/stages/<phase>/<slug>.md or
+      // <harness>/agents/<slug>.md.
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(target)) { recordDrop(`contribution "${file}" has an invalid target "${target}" (a stage or agent slug: lowercase letters, digits and dashes); skipped`); continue; }
       const plugin = frontmatterScalar(content, "plugin") ?? "";
       // `bundle:` was the pre-rename ownership key. It is dead, not aliased —
       // drop-log with the fix named so a stale plugin tree fails visibly
@@ -2087,7 +2740,7 @@ try {
       }
       // `:` is the fragment-sentinel delimiter (<!-- plugin:<plugin>:anchor:order -->),
       // so a plugin containing `:` would break the peer-block scan's `[^:]+` and
-      // silently misorder splices. Reject it up front (round-6).
+      // silently misorder splices. Reject it up front.
       if (plugin.includes(":")) { recordDrop(`contribution "${file}" has an invalid plugin "${plugin}" (must not contain ':'); skipped`); continue; }
       if (plugin !== PLUGIN_NAME) {
         recordDrop(
@@ -2095,14 +2748,37 @@ try {
         );
         continue;
       }
-      const stageFile = findStageFile(target);
-      if (!stageFile) { recordDrop(`contribution "${file}" targets missing stage "${target}"`); continue; }
+      // A contribution under contributions/agents/ targets a core persona
+      // (<harness>/agents/<slug>.md) instead of a stage. Personas take prose
+      // fragments only: their frontmatter is identity and tier, so the
+      // structural adds.* surfaces have no meaning there and are ignored
+      // with an advisory drop rather than merged into the wrong shape.
+      const isAgentContribution = phase === "agents";
+      const stageFile = isAgentContribution ? findAgentFile(target) : findStageFile(target);
+      if (!stageFile) { recordDrop(`contribution "${file}" targets missing ${isAgentContribution ? "agent" : "stage"} "${target}"`); continue; }
+      // Only a core persona takes contributions, checked against the same
+      // roster as the validator. Without it, fail closed: an engine that
+      // predates the roster also predates persona strip, refresh and doctor.
+      if (isAgentContribution) {
+        if (!coreAgentRoster) {
+          recordDrop(`contribution "${file}" targets agent "${target}", but the installed engine ships no core agent roster (tools/data/plugin-authoring-context.json); upgrade the engine, then re-run compose; skipped`);
+          continue;
+        }
+        if (!coreAgentRoster.has(target)) {
+          recordDrop(`contribution "${file}" targets agent "${target}", which is not a core persona (it is not in the core agent roster); skipped`);
+          continue;
+        }
+      }
 
       // structural: adds.produces / adds.sensors / adds.consumes
-      const addsBlock = fm.match(/^adds:\n([\s\S]*?)(?=^\S|$(?![\s\S]))/m)?.[1] ?? "";
-      // Drop-log a parse shortfall, mirroring the consumes parser: the block
-      // regex stops at the first non-4-space entry, so a mis-indented line
-      // silently truncated the list (entries after it vanished with no log).
+      const declaredAdds = fm.match(/^adds:\n([\s\S]*?)(?=^\S|$(?![\s\S]))/m)?.[1] ?? "";
+      // Any adds: key on a persona is reported, adds: [] included, as the validator does.
+      if (isAgentContribution && /^adds:/m.test(fm)) {
+        recordDrop(`contribution to ${target}: agent contributions carry prose fragments only; adds.* has no meaning on a persona and was ignored`, "advisory");
+      }
+      const addsBlock = isAgentContribution ? "" : declaredAdds;
+      // Drop-log a parse shortfall, mirroring the consumes parser: only 4-space
+      // entries parse, so a mis-indented line would otherwise vanish with no log.
       const listOf = (f: string): string[] => {
         const declaredBlock = addsBlock.match(new RegExp(`^ {2}${f}:\\n((?:\\s+- .*\\n?)*)`, "m"))?.[1] ?? "";
         const parsed: string[] = [];
@@ -2119,15 +2795,15 @@ try {
       const consumes = (() => {
         // Parse consumes per-entry, NOT by zipping two independent artifact/required
         // scans: a dash-less `required:`/`conditional_on:` continuation line must
-        // bind to the artifact above it, or entry 2+ is dropped and required flips
-        // (round-2 blocker). Each entry starts at `- artifact:` and owns every
+        // bind to the artifact above it, or entry 2+ is dropped and required flips.
+        // Each entry starts at `- artifact:` and owns every
         // following indented non-dash line until the next `- artifact:`.
         const block = addsBlock.match(/^ {2}consumes:\n((?: {4}-? .*\n?)*)/m)?.[1];
         if (!block) return [];
         const out: Array<{ artifact: string; required: boolean; conditional_on?: string }> = [];
         // Split on ANY-indent `- artifact:` (a YAML-legal 6-space list must still
-        // yield one chunk per entry; a fixed 4-space anchor silently merged them —
-        // round-3). Drop-log if entries outnumber chunks (a split that failed).
+        // yield one chunk per entry; a fixed 4-space anchor silently merged them).
+        // Drop-log if entries outnumber chunks (a split that failed).
         for (const chunk of block.split(/^(?=\s*- artifact:)/m)) {
           const artifact = chunk.match(/-\s*artifact:\s*([\w-]+)/)?.[1];
           if (!artifact) continue;
@@ -2146,21 +2822,21 @@ try {
 
       // Drop-log any adds.* key compose does not implement — no silent no-op.
       // Implemented merge surfaces: produces / sensors / consumes / scopes /
-      // required_sections. A documented-but-deferred surface (e.g.
-      // requires_stage) is recorded as a drop so an author sees it had no
-      // effect, per the no-silent-failures contract. (When a surface
-      // graduates, add it to IMPLEMENTED_ADDS + a merge call below.)
-      const IMPLEMENTED_ADDS = new Set(["produces", "sensors", "consumes", "scopes", "required_sections"]);
+      // requires_stage / required_sections. A documented-but-deferred surface
+      // is recorded as a drop so an author sees it had no effect, per the
+      // no-silent-failures contract. (When a surface graduates, add it to
+      // IMPLEMENTED_ADDS + a merge call below.)
+      const IMPLEMENTED_ADDS = new Set(["produces", "sensors", "consumes", "scopes", "requires_stage", "required_sections"]);
       for (const km of addsBlock.matchAll(/^ {2}([a-z_]+):/gm)) {
         if (!IMPLEMENTED_ADDS.has(km[1])) {
-          recordDrop(`contribution to ${target}: adds.${km[1]} is not yet an implemented merge surface (only produces/sensors/consumes/scopes/required_sections); ignored`, "advisory");
+          recordDrop(`contribution to ${target}: adds.${km[1]} is not yet an implemented merge surface (only produces/sensors/consumes/scopes/requires_stage/required_sections); ignored`, "advisory");
         }
       }
 
       // required_sections values are quoted strings ("Branch Coverage"), unlike
       // the kebab slugs in produces/sensors. Capture the whole value then strip
       // only a MATCHED pair of outer quotes — a `[^"]` class dropped any value
-      // with an interior quote (`"Say "Hi" Section"`) silently (round-5).
+      // with an interior quote (`"Say "Hi" Section"`) silently.
       const requiredSections = (() => {
         const s = addsBlock.match(/^ {2}required_sections:\n((?: {4}- .*\n?)*)/m)?.[1];
         if (!s) return [];
@@ -2168,7 +2844,7 @@ try {
         for (const x of s.matchAll(/^ {4}- (.+?)\s*$/gm)) {
           const v = x[1].replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1").trim();
           // An empty (or quote-only) value would merge a useless `- ""` into the
-          // stage with no signal — drop-log it instead (round-6).
+          // stage with no signal, so drop-log it instead.
           if (v === "") { recordDrop(`contribution to ${target}: empty required_sections value; dropped`); continue; }
           out.push(v);
         }
@@ -2179,7 +2855,7 @@ try {
       // stage (mixed endings). Contribution content is already normalized above.
       let stageContent = readFileSync(stageFile, "utf-8").replace(/\r\n/g, "\n");
       const before = stageContent;
-      const addedProduces: string[] = [], addedSensors: string[] = [], addedConsumes: ConsumeEntry[] = [], addedScopes: string[] = [], addedSections: string[] = [];
+      const addedProduces: string[] = [], addedSensors: string[] = [], addedConsumes: ConsumeEntry[] = [], addedScopes: string[] = [], addedRequires: string[] = [], addedSections: string[] = [];
       const sectionsMeta: { created?: boolean } = {};
       // adds.scopes — set-union the target stage into this plugin's scopes.
       // Two guard rails, both drop-logged: the scope's identity file must
@@ -2206,10 +2882,17 @@ try {
         }
         return true;
       });
+      // adds.requires_stage — set-union ordering edges the guard accepts.
+      const mergeableRequires = listOf("requires_stage").filter((dep) => {
+        const refusal = requiresRefusal(target, stageFile, dep);
+        if (refusal) recordDrop(`contribution to ${target}: adds.requires_stage "${dep}" ${refusal}; dropped`);
+        return refusal === null;
+      });
       stageContent = mergeListField(stageContent, "produces", listOf("produces"), target, addedProduces);
       stageContent = mergeListField(stageContent, "sensors", listOf("sensors"), target, addedSensors);
       stageContent = mergeListField(stageContent, "scopes", mergeableScopes, target, addedScopes);
       stageContent = mergeConsumes(stageContent, consumes, target, addedConsumes);
+      stageContent = mergeListField(stageContent, "requires_stage", mergeableRequires, target, addedRequires);
       // Only merge required_sections if the installed engine accepts the key —
       // otherwise skip + drop-log rather than break the install's next compile.
       if (requiredSections.length > 0 && !requiredSectionsSafe) {
@@ -2221,18 +2904,19 @@ try {
       recordContrib(target, "sensors", addedSensors);
       recordConsumes(target, addedConsumes);
       recordContrib(target, "scopes", addedScopes);
+      recordContrib(target, "requires_stage", addedRequires);
       recordContrib(target, "required_sections", addedSections);
       if (sectionsMeta.created) {
         contribRecord(target).required_sections_created = true;
       }
-      if (addedProduces.length || addedSensors.length || addedConsumes.length || addedScopes.length || addedSections.length) {
+      if (addedProduces.length || addedSensors.length || addedConsumes.length || addedScopes.length || addedRequires.length || addedSections.length) {
         contribManifestDirty = true;
       }
 
       // prose fragments — paired to their `## fragment: <anchor>` body block BY
       // ANCHOR LABEL, not array index. Positional pairing silently mismatched
       // prose to anchors when the body order differed from the frontmatter order
-      // (round-4). Multiple fragments may target the same anchor (test-pro has 3×
+      // Multiple fragments may target the same anchor (test-pro has two at
       // after-step:9), so pair per-anchor FIFO: the i-th frontmatter entry for
       // anchor A takes the i-th body block labelled A. A frontmatter entry with no
       // matching body block (or vice versa) is dropped-with-log, not silently
@@ -2244,7 +2928,7 @@ try {
       // scanner, not a global regex: a `## fragment:` line INSIDE a ``` code fence
       // (exactly how an author documents the fragment format) must NOT be treated
       // as a delimiter — the regex form truncated the block there and spawned
-      // phantom blocks, silently dropping trailing real prose (round-5).
+      // phantom blocks, silently dropping trailing real prose.
       const blocksByAnchor = new Map<string, string[]>();
       {
         let curAnchor: string | null = null; let curLines: string[] = [];
@@ -2254,7 +2938,7 @@ try {
           // CommonMark fence rules: a closing fence is the SAME char, length >=
           // the opener, and carries no info string. Tracking only the char (not
           // the length) let an inner ``` close an outer ```` — so documenting the
-          // fragment format with a nested fence corrupted the block (round-6).
+          // fragment format with a nested fence corrupted the block.
           const fence = line.match(/^(\s*)(`{3,}|~{3,})(.*)$/);
           if (fence) {
             const ch = fence[2][0]; const len = fence[2].length; const info = fence[3].trim();
@@ -2270,13 +2954,12 @@ try {
       const frags: Fragment[] = [];
       for (const meta of fragMeta) {
         const queue = blocksByAnchor.get(meta.anchor);
-        const prose = (queue && queue.length > 0 ? queue.shift()! : "").replaceAll("{{HARNESS_DIR}}", HARNESS_LEAF);
+        const prose = projectPluginTokens(queue && queue.length > 0 ? queue.shift()! : "", HARNESS_LEAF);
         if (!prose) { recordDrop(`contribution to ${target}: fragment anchor "${meta.anchor}" order ${meta.order} has no matching "## fragment: ${meta.anchor}" prose block; dropped`); continue; }
         frags.push({ ...meta, plugin, prose });
       }
       // Leftover body blocks with no matching frontmatter entry are dropped-with-
-      // log — the "or vice versa" half the prior comment promised but never did
-      // (round-5). An empty leftover (blank prose) is ignored, not logged.
+      // log. An empty leftover (blank prose) is ignored, not logged.
       for (const [anchor, remaining] of blocksByAnchor) {
         for (const leftover of remaining) {
           if (leftover) recordDrop(`contribution to ${target}: "## fragment: ${anchor}" prose block has no matching frontmatter fragments entry; dropped`);
@@ -2290,6 +2973,7 @@ try {
       // file replace the first, winner decided by readdir order). Aligned with
       // the "collision is an error" doc claim.
       const ordered = [...frags].sort((a, b) => a.order - b.order || a.plugin.localeCompare(b.plugin));
+      const spliced: Fragment[] = [];
       for (const f of ordered) {
         const key = `${target}:${f.plugin}:${f.anchor}:${f.order}`;
         if (seenFragKeys.has(key)) { recordDrop(`contribution to ${target}: duplicate fragment ${f.plugin}:${f.anchor}:${f.order} (same plugin/anchor/order, possibly across files); dropped`); continue; }
@@ -2301,13 +2985,99 @@ try {
         const openIdx = stageContent.indexOf(open);
         if (openIdx !== -1 && stageContent.indexOf(close, openIdx + open.length) !== -1) {
           recordFragment(target, fragment);
+          spliced.push(f);
         }
       }
 
-      if (stageContent !== before) { // compare-before-write (review #11)
+      if (stageContent !== before) {
         writeComposeFile(stageFile, stageContent);
         changed = true;
       }
+      // The persona's native twins take the fragments that landed in it, in the same order.
+      if (isAgentContribution) {
+        for (const twin of personaTwinFiles(target)) {
+          const label = `${target} (${relative(PROJECT_DIR, twin.path).replace(/\\/g, "/")})`;
+          const current = readFileSync(twin.path, "utf-8").replace(/\r\n/g, "\n");
+          const spliceAll = (text: string): string =>
+            spliced.reduce((acc, f) => spliceFragment(acc, f, label, twin.toml ? tomlBasicText : undefined), text);
+          const next = twin.toml ? editTomlInstructions(current, spliceAll) : spliceAll(current);
+          if (next === null) {
+            recordDrop(`contribution to ${label}: the file has no developer_instructions string, so its fragments were not added there`);
+            continue;
+          }
+          if (next !== current) {
+            writeComposeFile(twin.path, next);
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+
+  // Fragments this plugin recorded earlier but did not ship this run (moved to
+  // another anchor, renumbered, or dropped) leave the stage and the record, so
+  // a moved fragment appears once and doctor's composed-surface check agrees.
+  // Gated like the merge itself: a readable sidecar and an enabled plugin.
+  if (!contribManifestLoadError && pluginEnabledBySelection()) {
+    for (const [target, rec] of Object.entries(contribManifest)) {
+      if (!Array.isArray(rec.fragments) || rec.fragments.length === 0) continue;
+      const stale = rec.fragments.filter((f) =>
+        f !== null && typeof f === "object" && typeof f.anchor === "string" &&
+        Number.isSafeInteger(f.order) && typeof f.hash === "string" &&
+        !seenFragKeys.has(`${target}:${PLUGIN_NAME}:${f.anchor}:${f.order}`));
+      if (stale.length === 0) continue;
+      // The sidecar is project data: a key that is not a plain stage or agent
+      // slug is not resolved to a path.
+      const plainSlug = /^[a-z0-9][a-z0-9-]*$/.test(target);
+      const stageFile = plainSlug ? findStageFile(target) : null;
+      const personaFile = plainSlug && !stageFile ? findAgentFile(target) : null;
+      if (personaFile) {
+        // A persona and its native twins lose exactly the block compose added,
+        // so each reads as a first compose of this version writes it.
+        const files = [{ path: personaFile, toml: false }, ...personaTwinFiles(target)];
+        for (const file of files) {
+          const current = readFileSync(file.path, "utf-8").replace(/\r\n/g, "\n");
+          const cutStale = (text: string): string => {
+            let content = text;
+            for (const f of stale) {
+              const open = `<!-- plugin:${PLUGIN_NAME}:${f.anchor}:${f.order}:${f.hash} -->`;
+              const close = `<!-- /plugin:${PLUGIN_NAME}:${f.anchor}:${f.order}:${f.hash} -->`;
+              const start = content.indexOf(open);
+              const end = start === -1 ? -1 : content.indexOf(close, start + open.length);
+              if (start !== -1 && end !== -1) content = cutFragmentBlock(content, start, end + close.length);
+            }
+            return content;
+          };
+          const next = file.toml ? editTomlInstructions(current, cutStale) ?? current : cutStale(current);
+          if (next !== current) {
+            writeComposeFile(file.path, next);
+            changed = true;
+          }
+        }
+      }
+      if (stageFile) {
+        let content = readFileSync(stageFile, "utf-8").replace(/\r\n/g, "\n");
+        const before = content;
+        for (const f of stale) {
+          const open = `<!-- plugin:${PLUGIN_NAME}:${f.anchor}:${f.order}:${f.hash} -->`;
+          const close = `<!-- /plugin:${PLUGIN_NAME}:${f.anchor}:${f.order}:${f.hash} -->`;
+          const start = content.indexOf(open);
+          const end = start === -1 ? -1 : content.indexOf(close, start + open.length);
+          if (start === -1 || end === -1) continue;
+          // Close the seam the block leaves: one blank line, as before the splice.
+          const head = content.slice(0, start).replace(/\n*$/, "\n");
+          const tail = content.slice(end + close.length).replace(/^\n*/, "");
+          content = tail ? `${head}\n${tail}` : head;
+        }
+        if (content !== before) {
+          writeComposeFile(stageFile, content);
+          changed = true;
+        }
+      }
+      rec.fragments = rec.fragments.filter((f) => !stale.includes(f));
+      if (rec.fragments.length === 0) delete rec.fragments;
+      if (Object.keys(rec).length === 0) delete contribManifest[target];
+      contribManifestDirty = true;
     }
   }
 
@@ -2317,7 +3087,10 @@ try {
   if (contribManifestDirty) {
     try {
       mkdirSync(join(HARNESS_DIR, "tools", "data"), { recursive: true });
-      writeComposeFile(contribManifestPath, `${JSON.stringify(contribManifest, null, 2)}\n`);
+      // An empty sidecar is refused on the next load, so the last retired
+      // record takes the file with it.
+      if (Object.keys(contribManifest).length === 0) removeComposeFile(contribManifestPath);
+      else writeComposeFile(contribManifestPath, `${JSON.stringify(contribManifest, null, 2)}\n`);
     } catch (e) {
       recordDrop(`could not write the contribution sidecar ${relative(PROJECT_DIR, contribManifestPath)}: ${e instanceof Error ? e.message : String(e)} - doctor cannot verify the composed surface and disabling this plugin will not strip its merged contributions`);
       rollbackComposeWrites();
@@ -2328,7 +3101,7 @@ try {
   //    a transient failure (disk full, killed mid-session-start) must self-heal
   //    next session. Under the no-clobber + sentinel + compare-before-write gates
   //    `changed` stays false on reruns, so gating on `changed` alone would make a
-  //    failed compile permanent (round-2 major). Detect it by checking the
+  //    failed compile permanent. Detect it by checking the
   //    compiled graph actually contains this plugin's stage slugs.
   const pluginStages: Array<{ slug: string; phase: string }> = [];
   for (const phase of PHASES) {
@@ -2377,7 +3150,7 @@ try {
   // the graph-slug check can't see its failed recompile. A persisted retry marker
   // covers that case: written on compile failure, deleted on success, and any
   // presence forces a retry next run — so a transient failure self-heals for
-  // stage-carrying AND contributions-only plugins alike (round-3). The marker is
+  // stage-carrying AND contributions-only plugins alike. The marker is
   // PROJECT-side (never in PLUGIN_ROOT, which may be read-only / under dist/), and
   // keyed by the plugin's identity (PLUGIN_KEY, computed up front) so two plugins
   // on one harness never share a marker.
@@ -2403,15 +3176,15 @@ try {
       if (retryPending) {
         try { rmSync(retryMarker, { force: true }); } catch { /* best-effort */ }
       }
-      refreshSkillGeneratedRegion("stage-table", STAGE_TABLE_BEGIN, STAGE_TABLE_END);
-      refreshSkillGeneratedRegion("scope-table", SCOPE_TABLE_BEGIN, SCOPE_TABLE_END);
+      refreshSkillGeneratedRegion("stage-table", STAGE_TABLE_END);
+      refreshSkillGeneratedRegion("scope-table", SCOPE_TABLE_END);
     }
   }
 
   const pluginShipsScopes = existsSync(join(PLUGIN_ROOT, "scopes"));
   if (recompiled || missingPluginStageRunner) {
     if (!skillsDirExists) {
-      recordDrop(`runner regeneration skipped: ${HARNESS_LEAF}/skills not present in this install`, "advisory");
+      recordDrop(`runner regeneration skipped: ${relative(PROJECT_DIR, SKILLS_DIR).replaceAll("\\", "/")} not present in this install`, "advisory");
     } else {
       const runnerEnv = installedToolEnv();
       const runRunnerGen = (args: string[], label: string): boolean => {

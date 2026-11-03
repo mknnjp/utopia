@@ -8,15 +8,23 @@
 // and relies on native agent resource preload. Kiro IDE does not register this
 // hook because tool-argument delivery is not uniform across supported
 // generations; it instead preloads active memory through always-included
-// workspace steering with live file references.
+// workspace steering that carries the memory text (aidlc-includes.ts).
+//
+// On Claude it also runs at PostToolUse, only to confirm a background launch
+// the PreToolUse input did not announce (see isBackgroundDispatch).
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import {
+  hookStandsOutside,
+  enterHookWorkflow,
   agentsDir,
+  authorityFor,
   getField,
+  isAidlcAgentFile,
   markSubagentInflight,
+  recordGuardBlockedRow,
   resolveWorkflowSelection,
   stateFilePath,
   stateFilePathForSelection,
@@ -30,12 +38,15 @@ import {
   type RuleContent,
   resolvedRuleBundle,
 } from "../tools/aidlc-steering.ts";
+import { recordSubagentDispatch } from "./aidlc-log-subagent.ts";
 
 type HookInput = {
   cwd?: string;
+  hook_event_name?: string;
   session_id?: unknown;
   tool_name?: string;
   tool_input?: Record<string, unknown>;
+  tool_response?: unknown;
 };
 
 export type DispatchRuleResult = {
@@ -57,6 +68,7 @@ function isAidlcAgent(value: unknown): value is string {
     typeof value === "string" &&
     /^[a-z0-9][a-z0-9-]*-agent$/.test(value) &&
     existsSync(join(agentsDir(), `${value}.md`)) &&
+    isAidlcAgentFile(join(agentsDir(), `${value}.md`)) &&
     !EXEMPT_AGENTS.has(value)
   );
 }
@@ -193,16 +205,41 @@ function withPrompt(
   return input;
 }
 
+// The agent a single dispatch names, as each harness's dispatch input carries it.
+function dispatchAgent(input: Record<string, unknown>): unknown {
+  return input.subagent_type ?? input.agent_type ?? input.agent ?? input.role;
+}
+
+// Every helper one dispatch call sends, read as the rules read them: one name,
+// or a crew's roles; empty strings for names the call does not carry.
+function dispatchedAgents(toolName: string, input: Record<string, unknown>): string[] {
+  const named = (value: unknown): string => (typeof value === "string" ? value : "");
+  if (toolName.toLowerCase() === "subagent" && Array.isArray(input.stages) && input.stages.length > 0) {
+    return input.stages.map((stage) =>
+      stage && typeof stage === "object" ? named((stage as Record<string, unknown>).role) : "");
+  }
+  return [named(dispatchAgent(input))];
+}
+
+// The record that this call sends its helpers (aidlc-log-subagent.ts), on the
+// paths that let it go; a later guard that refuses it leaves the record open,
+// which reads as a doubt and never as a reviewer that did not finish.
+function recordDispatch(parsed: HookInput, projectDir: string): void {
+  try {
+    const toolName = parsed.tool_name ?? "";
+    if (!DISPATCH_TOOLS.has(toolName.toLowerCase())) return;
+    recordSubagentDispatch(projectDir, parsed.session_id, dispatchedAgents(toolName, parsed.tool_input ?? {}));
+  } catch {
+    // Evidence only: never the dispatch's output or exit code.
+  }
+}
+
 function augmentSingleDispatch(
   input: Record<string, unknown>,
   projectDir: string,
   fallbackStage: string | null,
 ): DispatchRuleResult {
-  const agent =
-    input.subagent_type ??
-    input.agent_type ??
-    input.agent ??
-    input.role;
+  const agent = dispatchAgent(input);
   if (!isAidlcAgent(agent)) return { changed: false };
   const original = promptText(input);
   if (!original) return { changed: false };
@@ -268,16 +305,30 @@ export function dispatchHookOutput(
   );
 }
 
+// Whether this call started a background worker. PreToolUse sees a requested
+// `run_in_background: true`. Claude Code also launches an Agent in the
+// background without that flag; only the PostToolUse response confirms it,
+// with status "async_launched". Count that case there, and only there, so no
+// launch is counted twice.
+function isBackgroundDispatch(parsed: HookInput): boolean {
+  const requested = parsed.tool_input?.run_in_background === true;
+  if (parsed.hook_event_name !== "PostToolUse") return requested;
+  const response = parsed.tool_response;
+  return (
+    !requested &&
+    response !== null &&
+    typeof response === "object" &&
+    (response as { status?: unknown }).status === "async_launched"
+  );
+}
+
 function recordAcceptedBackgroundDispatch(
   parsed: HookInput,
   projectDir: string,
 ): void {
   try {
     const toolName = (parsed.tool_name ?? "").toLowerCase();
-    if (
-      !DISPATCH_TOOLS.has(toolName) ||
-      parsed.tool_input?.run_in_background !== true
-    ) {
+    if (!DISPATCH_TOOLS.has(toolName) || !isBackgroundDispatch(parsed)) {
       return;
     }
     const rawSessionId = parsed.session_id;
@@ -295,7 +346,17 @@ function recordAcceptedBackgroundDispatch(
         : undefined;
     const selection = resolveWorkflowSelection(projectDir, { sessionId });
     if (!existsSync(stateFilePathForSelection(projectDir, selection))) return;
-    markSubagentInflight(projectDir, rawSessionId);
+    // The dispatch stamp. This hook fires on the dispatch itself, in the MAIN
+    // session, so the authority it reads here is the one that sent the agent:
+    // the human's newer instruction, or the engine's. The agent inherits it and
+    // is judged on it, instead of arriving with no authority of its own and
+    // meeting a fence that nobody intended for it. Read before the mark so the
+    // in-flight entry it writes cannot be mistaken for the dispatcher.
+    const dispatchAuthority = authorityFor(projectDir, {
+      hookInput: null,
+      sessionId: rawSessionId,
+    }).covered;
+    markSubagentInflight(projectDir, rawSessionId, dispatchAuthority);
   } catch {
     // In-flight evidence is advisory. Its write must never alter dispatch
     // acceptance, rule-delivery output, or the hook's established exit codes.
@@ -317,13 +378,46 @@ export async function run(input: string): Promise<number> {
   const projectDir = isAbsolute(rawProjectDir)
     ? rawProjectDir
     : resolve(process.cwd(), rawProjectDir);
+  // A dispatch in a conversation that has not joined the selected workflow gets
+  // none of that workflow's stage rules and records nothing in its ledger.
+  const workflow = enterHookWorkflow(projectDir, parsed.session_id);
+  try {
+    if (hookStandsOutside(workflow)) return 0;
+    return deliver(parsed, projectDir);
+  } finally {
+    workflow.restore();
+  }
+}
+
+function recordStageRulesBlocked(parsed: HookInput, projectDir: string, reason: string): void {
+  try {
+    recordGuardBlockedRow(projectDir, {
+      eventType: "STAGE_RULES_BLOCKED",
+      hook: "deliver-stage-rules",
+      reason,
+      session: validSessionId(typeof parsed.session_id === "string" ? parsed.session_id : undefined),
+    });
+  } catch {
+    return;
+  }
+}
+
+function deliver(parsed: HookInput, projectDir: string): number {
+  // The rules were delivered before the dispatch; afterwards the hook only
+  // records a background launch its input did not announce.
+  if (parsed.hook_event_name === "PostToolUse") {
+    recordAcceptedBackgroundDispatch(parsed, projectDir);
+    return 0;
+  }
   const result = dispatchHookOutput(parsed, projectDir);
   if (result.error) {
     process.stderr.write(`${result.error}\n`);
+    recordStageRulesBlocked(parsed, projectDir, "rules-unreadable");
     return 2;
   }
   if (!result.changed || !result.updatedInput) {
     recordAcceptedBackgroundDispatch(parsed, projectDir);
+    recordDispatch(parsed, projectDir);
     return 0;
   }
   const output = `${JSON.stringify({
@@ -342,6 +436,7 @@ export async function run(input: string): Promise<number> {
           "its own active-memory preload fallback, so the work continues without them attached.\n",
       );
       recordAcceptedBackgroundDispatch(parsed, projectDir);
+      recordDispatch(parsed, projectDir);
       return 3;
     }
     process.stderr.write(
@@ -350,9 +445,11 @@ export async function run(input: string): Promise<number> {
         "brief. The subagent was not started, and nothing partial was written. Shorten or split " +
         "the rule files for the active stage, then start the subagent again.\n",
     );
+    recordStageRulesBlocked(parsed, projectDir, "oversize");
     return 2;
   }
   recordAcceptedBackgroundDispatch(parsed, projectDir);
+  recordDispatch(parsed, projectDir);
   process.stdout.write(output);
   return 0;
 }

@@ -87,6 +87,11 @@ export function parseSensorManifest(raw: string): SensorManifest {
     const n = parseInt(timeout, 10);
     if (!Number.isNaN(n)) obj.timeout_seconds = n;
   }
+  // The declared invocation contract. Only the key SET is read: the values are
+  // type hints nothing consumes, while the dispatcher routes a sensor's path
+  // argument on which key it declares (file_path vs output_path).
+  const inputSchema = mappingKeys(fm, "input_schema");
+  if (inputSchema) obj.input_schema = inputSchema;
 
   // Cast-through-unknown: obj is Record<string, unknown> with the
   // shape of a SensorManifest by construction (we wrote each known
@@ -95,6 +100,78 @@ export function parseSensorManifest(raw: string): SensorManifest {
   // and throws on any field that's actually missing.
   // type-coverage:ignore-next-line — documented parseSensorManifest trust boundary
   return obj as unknown as SensorManifest;
+}
+
+// Helper: the top-level keys of a nested `<field>:` mapping in the
+// frontmatter, in declaration order. Reads both shapes an author can write:
+// the block form (keys indented under `<field>:`) and the one-line flow form
+// (`<field>: { a: x, b: y }`). A key may be quoted, and a trailing `# comment`
+// is ignored on any line, including the header. A declaration that yields no
+// keys (`{}`) reads the same as no declaration.
+function mappingKeys(fm: string, field: string): Record<string, string> | undefined {
+  const lines = fm.split(/\r?\n/);
+  const headRe = new RegExp(`^${field}[ \\t]*:(.*)$`);
+  const head = lines.findIndex((line) => headRe.test(line));
+  if (head < 0) return undefined;
+  // What follows the header's colon: nothing for the block form, `{...}` for
+  // the flow form. Anything else is not a mapping and declares no keys.
+  const inline = stripYamlComment(lines[head].replace(headRe, "$1"));
+  let parts: string[] = [];
+  if (inline === "") {
+    parts = blockMappingLines(lines, head + 1);
+  } else if (inline.startsWith("{") && inline.endsWith("}")) {
+    parts = splitFlowMapping(inline.slice(1, -1));
+  }
+  const entries: Record<string, string> = {};
+  for (const part of parts) {
+    const entry = part.match(/^(?:"([^"]*)"|'([^']*)'|([A-Za-z_][A-Za-z0-9_-]*))[ \t]*:[ \t]*(.*)$/);
+    const key = entry?.[1] ?? entry?.[2] ?? entry?.[3];
+    if (entry && key) entries[key] = stripYamlComment(entry[4]);
+  }
+  return Object.keys(entries).length > 0 ? entries : undefined;
+}
+
+// Helper: the trimmed entry lines of a block mapping that starts at `start`.
+// Blank and comment lines are skipped wherever they sit, deeper nesting (a
+// list of objects under one of the keys) belongs to the key above it, and the
+// block ends at the next unindented line.
+function blockMappingLines(lines: string[], start: number): string[] {
+  const out: string[] = [];
+  let indent: number | null = null;
+  for (let i = start; i < lines.length; i++) {
+    const line = lines[i];
+    const text = line.trim();
+    if (text === "" || text.startsWith("#")) continue;
+    const width = line.length - line.trimStart().length;
+    if (width === 0) break;
+    if (indent === null) indent = width;
+    if (width === indent) out.push(text);
+  }
+  return out;
+}
+
+// Helper: split a flow mapping's body on its top-level commas, so a nested
+// `{...}` or `[...]` value stays with its key.
+function splitFlowMapping(body: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch === "{" || ch === "[") depth++;
+    else if (ch === "}" || ch === "]") depth--;
+    else if (ch === "," && depth === 0) {
+      parts.push(body.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(body.slice(start).trim());
+  return parts;
+}
+
+// Helper: drop a YAML comment (a `#` at the start or after whitespace) and trim.
+function stripYamlComment(text: string): string {
+  return text.replace(/(^|[ \t])#.*$/, "").trim();
 }
 
 // Helper: throw if obj[field] isn't a non-empty string. Centralises
@@ -114,8 +191,6 @@ function requireNonEmptyString(
   }
 }
 
-// Helper: throw if obj[field] !== expected. Optional `hint` appends a trailing
-// clause to the thrown message (e.g., "; other kinds reserved for future releases").
 function requireExactValue<K extends "kind">(
   obj: SensorManifest,
   field: K,
@@ -150,8 +225,8 @@ function requireEnumValue<K extends "default_severity" | "fire_on">(
 // compileStageGraph's error pattern. Cross-checks `id:` against the
 // filename stem (passed by the caller, who knows the path).
 //
-// Per-field validation delegates to requireNonEmptyString and
-// requireExactValue helpers above; the function itself only branches
+// Per-field validation delegates to requireNonEmptyString, requireExactValue
+// and requireEnumValue helpers above; the function itself only branches
 // on (a) the required-fields presence loop, (b) the id-vs-filename
 // cross-check that needs both inputs, and (c) the optional-matches
 // gate. Cyclomatic complexity stays under the linter's complexity cap.
@@ -164,8 +239,8 @@ export function validateSensorManifest(
   // over REQUIRED_FIELDS without per-field overhead. obj is already typed
   // as SensorManifest by the parse step's trust boundary; the iteration
   // here cross-checks that the fields the type promises actually exist
-  // at runtime (catches edge cases where parseSensorManifest emits empty
-  // string for a field rather than the typed shape).
+  // at runtime (catches edge cases where parseSensorManifest omits a
+  // field rather than emitting the typed shape).
   // type-coverage:ignore-next-line — typed-to-record widening for runtime field iteration
   const objAsRecord: Record<string, unknown> = obj as unknown as Record<string, unknown>;
   for (const field of REQUIRED_FIELDS) {

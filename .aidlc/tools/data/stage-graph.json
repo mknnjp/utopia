@@ -166,8 +166,7 @@
       "enterprise",
       "feature",
       "mvp",
-      "poc",
-      "firefly-compat-inventory"
+      "poc"
     ],
     "reviewer": "aidlc-product-lead-agent",
     "review_artifact": "intent-statement",
@@ -209,7 +208,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -217,7 +216,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -282,7 +281,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -290,7 +289,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -372,7 +371,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -380,7 +379,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -456,7 +455,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -464,7 +463,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -537,7 +536,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -545,7 +544,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -625,7 +624,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -633,7 +632,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -735,7 +734,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -743,7 +742,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -788,8 +787,7 @@
       "security-patch",
       "classic",
       "workshop",
-      "express",
-      "firefly-compat-inventory"
+      "express"
     ],
     "inputs": "<record>/aidlc-state.md",
     "outputs": "aidlc/spaces/<active-space>/codekb/<repo>/ (9 artifacts: business-overview.md, architecture.md, code-structure.md, api-documentation.md, component-inventory.md, technology-stack.md, dependencies.md, code-quality-assessment.md, reverse-engineering-timestamp.md)",
@@ -818,7 +816,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -826,7 +824,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -926,7 +924,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -934,7 +932,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -951,6 +949,9 @@
     "produces": [
       "requirements",
       "requirements-analysis-questions"
+    ],
+    "optional_produces": [
+      "traceability"
     ],
     "consumes": [
       {
@@ -981,6 +982,10 @@
         "required": false
       }
     ],
+    "cites": [
+      "intent-statement",
+      "scope-document"
+    ],
     "requires_stage": [
       "approval-handoff",
       "reverse-engineering"
@@ -1000,8 +1005,7 @@
       "security-patch",
       "classic",
       "workshop",
-      "express",
-      "firefly-compat-inventory"
+      "express"
     ],
     "reviewer": "aidlc-product-lead-agent",
     "review_artifact": "requirements",
@@ -1009,7 +1013,7 @@
     "review_class": "advisory",
     "summary_confirmation": "required",
     "inputs": "RE artifacts (if brownfield), authoritative project description (project-description utility)",
-    "outputs": "requirements.md, requirements-analysis-questions.md (under this stage's record dir, engine-resolved)",
+    "outputs": "requirements.md, requirements-analysis-questions.md, traceability.json (Step 10: an `ids` list with one entry per FR and NFR ID, spelled exactly as requirements.md spells it, each with `kind` functional or non-functional and, for a sub-requirement, `of` its requirement) (under this stage's record dir, engine-resolved)",
     "rules_in_context": [
       {
         "path": "aidlc/spaces/default/memory/org.md",
@@ -1035,7 +1039,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1043,7 +1047,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -1134,7 +1138,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1142,12 +1146,12 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -1241,7 +1245,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1249,7 +1253,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -1343,7 +1347,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1351,12 +1355,12 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -1446,7 +1450,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1454,12 +1458,12 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -1545,7 +1549,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1553,7 +1557,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -1656,7 +1660,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1664,7 +1668,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -1727,6 +1731,10 @@
         "required": false
       },
       {
+        "artifact": "stories",
+        "required": false
+      },
+      {
         "artifact": "requirements",
         "required": true
       },
@@ -1763,7 +1771,7 @@
     "reviewer_max_iterations": 2,
     "review_class": "adversarial",
     "summary_confirmation": "required",
-    "inputs": "unit-of-work.md, unit-of-work-story-map.md, requirements.md, domain-design components.md, contract-design contract-summary.md (if produced)",
+    "inputs": "unit-of-work.md, unit-of-work-story-map.md, user-stories stories.md (if produced), requirements.md, domain-design components.md, contract-design contract-summary.md (if produced)",
     "outputs": "entities.md, rules.md, functional-spec.md, traceability.json, CONDITIONAL: frontend-components.md (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (untagged unit: all). entities.md and rules.md each carry a fenced ```yaml source-of-truth block; functional-spec.md is the source of truth for workflows and state machines and carries derived ER-diagram and rules-summary views.",
     "rules_in_context": [
       {
@@ -1790,7 +1798,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1798,7 +1806,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "linter",
@@ -1819,7 +1827,7 @@
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -1940,7 +1948,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -1948,7 +1956,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "linter",
@@ -1969,7 +1977,7 @@
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -2103,7 +2111,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2111,7 +2119,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "linter",
@@ -2132,7 +2140,7 @@
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -2272,7 +2280,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2280,7 +2288,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "linter",
@@ -2301,7 +2309,7 @@
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -2373,8 +2381,6 @@
     ],
     "sensors": [
       "required-sections",
-      "linter",
-      "type-check",
       "traceability"
     ],
     "scopes": [
@@ -2394,7 +2400,7 @@
     "reviewer_max_iterations": 2,
     "review_class": "adversarial",
     "inputs": "ALL prior design artifacts for this unit",
-    "outputs": "application code + code-generation-plan.md, code-generation-questions.md, unit-test-instructions.md, code-summary.md, traceability.json (under this stage's per-unit record dir, engine-resolved)",
+    "outputs": "application code + code-generation-plan.md, code-generation-questions.md, unit-test-instructions.md, code-summary.md, traceability.json (under this stage's per-unit record dir, engine-resolved; the engine writes code-generation-questions.md)",
     "rules_in_context": [
       {
         "path": "aidlc/spaces/default/memory/org.md",
@@ -2420,28 +2426,12 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
-      },
-      {
-        "id": "linter",
-        "path": ".aidlc/sensors/aidlc-linter.md",
-        "fire_on": "write",
-        "default_severity": "advisory",
-        "category": "code-quality",
-        "matches": "**/*.{ts,js}"
-      },
-      {
-        "id": "type-check",
-        "path": ".aidlc/sensors/aidlc-type-check.md",
-        "fire_on": "write",
-        "default_severity": "advisory",
-        "category": "code-quality",
-        "matches": "**/*.{ts,tsx}"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "traceability",
         "path": ".aidlc/sensors/aidlc-traceability.md",
-        "fire_on": "write",
+        "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-traceability",
         "matches": "**/traceability.json"
@@ -2462,12 +2452,14 @@
     "mode": "inline",
     "produces": [
       "build-instructions",
-      "integration-test-instructions",
-      "performance-test-instructions",
-      "security-test-instructions",
       "build-and-test-summary",
       "build-test-results",
       "cross-unit-traceability"
+    ],
+    "optional_produces": [
+      "integration-test-instructions",
+      "performance-test-instructions",
+      "security-test-instructions"
     ],
     "consumes": [
       {
@@ -2504,7 +2496,7 @@
       "express"
     ],
     "inputs": "ALL code generation outputs across all units",
-    "outputs": "build-instructions.md, integration-test-instructions.md, performance-test-instructions.md, security-test-instructions.md, build-and-test-summary.md, test-results.md, cross-unit-traceability.md (under this stage's record dir, engine-resolved)",
+    "outputs": "build-instructions.md, build-and-test-summary.md, test-results.md, cross-unit-traceability.md, CONDITIONAL: integration-test-instructions.md (Standard and above), performance-test-instructions.md and security-test-instructions.md (Comprehensive, when that NFR kind exists) (under this stage's record dir, engine-resolved)",
     "rules_in_context": [
       {
         "path": "aidlc/spaces/default/memory/org.md",
@@ -2530,7 +2522,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2538,7 +2530,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "type-check",
@@ -2593,7 +2585,6 @@
       "feature",
       "mvp",
       "infra",
-      "classic",
       "workshop"
     ],
     "summary_confirmation": "required",
@@ -2624,7 +2615,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2632,7 +2623,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "linter",
@@ -2701,7 +2692,6 @@
       "bugfix",
       "refactor",
       "security-patch",
-      "classic",
       "workshop",
       "express"
     ],
@@ -2733,7 +2723,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2741,7 +2731,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -2785,7 +2775,6 @@
       "enterprise",
       "feature",
       "infra",
-      "classic",
       "workshop"
     ],
     "summary_confirmation": "required",
@@ -2816,7 +2805,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2824,7 +2813,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -2879,7 +2868,6 @@
       "bugfix",
       "refactor",
       "security-patch",
-      "classic",
       "workshop",
       "express"
     ],
@@ -2911,7 +2899,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -2919,7 +2907,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -2977,7 +2965,6 @@
       "enterprise",
       "feature",
       "infra",
-      "classic",
       "workshop",
       "express"
     ],
@@ -3009,7 +2996,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -3017,7 +3004,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -3069,7 +3056,6 @@
     "scopes": [
       "enterprise",
       "feature",
-      "classic",
       "workshop"
     ],
     "summary_confirmation": "required",
@@ -3100,7 +3086,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -3108,7 +3094,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -3162,7 +3148,6 @@
     "scopes": [
       "enterprise",
       "feature",
-      "classic",
       "workshop"
     ],
     "summary_confirmation": "required",
@@ -3193,7 +3178,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -3201,7 +3186,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   },
@@ -3263,7 +3248,6 @@
     "scopes": [
       "enterprise",
       "feature",
-      "classic",
       "workshop"
     ],
     "summary_confirmation": "required",
@@ -3294,7 +3278,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       },
       {
         "id": "upstream-coverage",
@@ -3302,7 +3286,7 @@
         "fire_on": "gate",
         "default_severity": "advisory",
         "category": "document-shape",
-        "matches": "**/{aidlc-docs,intents}/**"
+        "matches": "**/{aidlc-docs,intents,codekb}/**"
       }
     ]
   }

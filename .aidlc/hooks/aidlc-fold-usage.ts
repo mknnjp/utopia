@@ -24,25 +24,11 @@
 // silently to no-data.
 //
 // Contract. This hook OBSERVES only - it must never alter Claude Code's flow. It
-// prints NOTHING on success (any stdout could be read as hook output), never
-// throws (everything is wrapped), and exits 0 in every case.
+// prints NOTHING on success (any stdout could be read as hook output), guards
+// its own parse and state read (the ledger writers in aidlc-usage.ts guard
+// theirs), and returns 0 on every path.
 
 import { existsSync, readFileSync } from "node:fs";
-import {
-  resolveProjectDirFromHook,
-  isEngineToolCall,
-  resolveWorkflowSelection,
-  stateFilePathForSelection,
-  validSessionId,
-  writeCurrentSessionId,
-} from "../tools/aidlc-lib.ts";
-import { isLifecycleBoundaryCommand } from "./aidlc-state-transition-guard.ts";
-import {
-  type FoldMode,
-  foldTranscriptIntoLedger,
-  usageTrackingDisabled,
-  writeCurrentTranscriptPath,
-} from "../tools/aidlc-usage.ts";
 
 // The Current Stage slug from the state file - a minimal substring match,
 // replicating aidlc-continue-workflow.ts's currentStageSlug so byStage keys agree. Returns ""
@@ -52,63 +38,111 @@ function currentStageSlug(stateContent: string): string {
   return (stageMatch?.[1] ?? "").trim();
 }
 
-function isLifecycleBoundaryToolCall(name: string, input: unknown): boolean {
-  if (!/^(bash|shell|execute_bash)$/i.test(name)) {
+async function isLifecycleBoundaryToolCall(
+  name: string,
+  input: unknown,
+): Promise<boolean> {
+  const [{ isEngineToolCall, isShellToolName, shellCommandText }, { isLifecycleBoundaryCommand }] =
+    await Promise.all([
+      import("../tools/aidlc-lib.ts"),
+      import("./aidlc-state-transition-guard.ts"),
+    ]);
+  if (!isShellToolName(name)) {
     return isEngineToolCall(name, input);
   }
-  if (input === null || typeof input !== "object") return false;
-  const command = (input as Record<string, unknown>).command;
-  return typeof command === "string" && isLifecycleBoundaryCommand(command);
+  const command = shellCommandText(input);
+  return command !== null && isLifecycleBoundaryCommand(command);
 }
 
-async function main(): Promise<void> {
-  // TTY guard - no Claude Code JSON is coming on a terminal (tests/debug).
-  if (process.stdin.isTTY) process.exit(0);
+// Null-intent bindings a session records by staying out of a record or leaving
+// one. "none" (nothing chose a record yet) still folds, as before any workflow.
+const LEFT_WORKFLOW_SOURCES: ReadonlySet<string | undefined> = new Set([
+  "unjoined", "archive", "space-switch-none",
+]);
 
-  // Kill switch - this hook fires around EVERY tool call, so exit before
-  // reading stdin or touching the ledger. AIDLC_DISABLE_USAGE_TRACKING=1
-  // silences the producer entirely (fold, pointers, session-id capture here).
-  if (usageTrackingDisabled()) process.exit(0);
-
-  const projectDir = resolveProjectDirFromHook(import.meta.url);
-
-  const input = await Bun.stdin.text();
+export async function run(input: string): Promise<number> {
+  // Fast exit before the engine loads; a recorded bypass is honoured below by
+  // usageTrackingDisabled(), which resolves the project setting too.
+  if (
+    Object.hasOwn(process.env, "AIDLC_DISABLE_USAGE_TRACKING") &&
+    process.env.AIDLC_DISABLE_USAGE_TRACKING === "1"
+  ) return 0;
   let sessionId = "";
   let transcriptPath: string | null = null;
-  let foldMode: FoldMode = "holdback";
+  let hookEvent = "";
+  let toolName = "";
+  let toolInput: unknown;
   try {
     const raw: unknown = JSON.parse(input);
     if (raw !== null && typeof raw === "object") {
       const obj = raw as Record<string, unknown>;
-      if (typeof obj.session_id === "string") {
-        sessionId = validSessionId(obj.session_id) ?? "";
-      }
-      if (obj.hook_event_name === "PreToolUse") {
-        const toolName = typeof obj.tool_name === "string" ? obj.tool_name : "";
-        foldMode = isLifecycleBoundaryToolCall(toolName, obj.tool_input)
-          ? "flush-all"
-          : "seal-main";
-      }
-      if (typeof obj.transcript_path === "string" && obj.transcript_path.length > 0) {
-        transcriptPath = obj.transcript_path;
-      }
+      if (typeof obj.session_id === "string") sessionId = obj.session_id;
+      hookEvent = typeof obj.hook_event_name === "string"
+        ? obj.hook_event_name
+        : "";
+      toolName = typeof obj.tool_name === "string" ? obj.tool_name : "";
+      toolInput = obj.tool_input;
+      if (typeof obj.transcript_path === "string") transcriptPath = obj.transcript_path;
     }
   } catch {
-    // Malformed / empty stdin - nothing to fold. Exit clean below.
+    return 0;
   }
-
-  if (!transcriptPath) process.exit(0);
-
-  // Derive the current stage the same way aidlc-continue-workflow.ts does: read the state
-  // file directly. Absent state => null so byStage is not polluted.
+  if (!transcriptPath) return 0;
+  const [
+    {
+      readActiveDirectiveMarker,
+      resolveProjectDirFromHook,
+      resolveWorkflowSelection,
+      stateFilePathForSelection,
+      validSessionId,
+      workflowParticipation,
+      writeCurrentSessionId,
+    },
+    {
+      foldTranscriptIntoLedger,
+      skipTranscriptUsage,
+      usageTrace,
+      usageTrackingDisabled,
+      writeCurrentTranscriptPath,
+    },
+  ] = await Promise.all([
+    import("../tools/aidlc-lib.ts"),
+    import("../tools/aidlc-usage.ts"),
+  ]);
+  usageTrace("fold-imports-loaded");
+  if (usageTrackingDisabled()) return 0;
+  sessionId = validSessionId(sessionId) ?? "";
+  const projectDir = resolveProjectDirFromHook(import.meta.url);
+  const foldMode = hookEvent === "PreToolUse"
+    ? await isLifecycleBoundaryToolCall(toolName, toolInput)
+      ? "flush-all"
+      : "seal-main"
+    : "holdback";
   let currentStage: string | null = null;
   try {
     const selection = resolveWorkflowSelection(projectDir, {
       sessionId: sessionId || undefined,
     });
+    // Usage in a conversation that has not joined this workflow is not its usage,
+    // and a session bound to no record because it stayed out or left carries no
+    // usage key. Its bytes are skipped, not held: a later join must not fold them.
+    if (
+      (selection.intent !== null && workflowParticipation(projectDir, selection) !== "participant") ||
+      (selection.intent === null && selection.binding !== null &&
+        LEFT_WORKFLOW_SOURCES.has(selection.binding.source))
+    ) {
+      usageTrace("fold-skip-begin");
+      skipTranscriptUsage(projectDir, transcriptPath);
+      usageTrace("fold-skip-end");
+      return 0;
+    }
     const statePath = stateFilePathForSelection(projectDir, selection);
     if (existsSync(statePath)) {
-      currentStage = currentStageSlug(readFileSync(statePath, "utf-8")) || null;
+      // Under unit-major Current Stage stays on the block's first stage while
+      // a later stage runs for a Unit; the active directive names that stage.
+      const stateContent = readFileSync(statePath, "utf-8");
+      currentStage = readActiveDirectiveMarker(projectDir, stateContent)?.stage ??
+        (currentStageSlug(stateContent) || null);
     }
   } catch {
     currentStage = null;
@@ -120,16 +154,15 @@ async function main(): Promise<void> {
   // closes completed subagent groups so lifecycle rollups include their final
   // calls; other PreToolUse events retain subagent holdback. PostToolUse is the
   // normal delayed-write fallback.
+  usageTrace("fold-begin", { mode: foldMode });
   foldTranscriptIntoLedger(projectDir, transcriptPath, currentStage, foldMode, {
     sessionId,
   });
+  usageTrace("fold-end");
+  return 0;
 }
 
-// Fully guarded: nothing this hook does may throw into Claude Code or print to
-// stdout on success. Any failure is swallowed and we exit 0.
-try {
-  await main();
-} catch {
-  // best-effort - usage bookkeeping never breaks a hook
+if (import.meta.main) {
+  const input = process.stdin.isTTY ? "" : await Bun.stdin.text();
+  process.exitCode = await run(input);
 }
-process.exit(0);

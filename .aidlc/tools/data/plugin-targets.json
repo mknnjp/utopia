@@ -2,6 +2,8 @@
   "claude": {
     "harnessName": "claude",
     "manifestDir": ".claude-plugin",
+    "marketplaceDir": ".claude-plugin",
+    "hostCatalogue": true,
     "harnessLeaf": ".claude",
     "kind": "store",
     "installRoots": [
@@ -14,24 +16,30 @@
   "codex": {
     "harnessName": "codex",
     "manifestDir": ".codex-plugin",
+    "marketplaceDir": ".agents/plugins",
+    "hostCatalogue": true,
     "harnessLeaf": ".codex",
     "kind": "store",
     "installRoots": [
       ".agents",
       ".codex",
       ".gitignore",
+      "AGENTS.md",
       "aidlc"
     ]
   },
   "copilot": {
     "harnessName": "copilot",
     "manifestDir": ".plugin",
+    "marketplaceDir": ".plugin",
+    "hostCatalogue": true,
     "harnessLeaf": ".aidlc",
     "kind": "store",
     "installRoots": [
       ".aidlc",
       ".github",
       ".gitignore",
+      ".vscode",
       "AGENTS.md",
       "aidlc"
     ]
@@ -39,6 +47,8 @@
   "cursor": {
     "harnessName": "cursor",
     "manifestDir": ".cursor-plugin",
+    "marketplaceDir": ".cursor-plugin",
+    "hostCatalogue": true,
     "harnessLeaf": ".cursor",
     "kind": "cursor",
     "installRoots": [
@@ -52,6 +62,8 @@
   "kiro": {
     "harnessName": "kiro",
     "manifestDir": ".kiro-plugin",
+    "marketplaceDir": ".kiro-plugin",
+    "hostCatalogue": false,
     "harnessLeaf": ".kiro",
     "kind": "kiro",
     "installRoots": [
@@ -64,6 +76,8 @@
   "kiro-ide": {
     "harnessName": "kiro-ide",
     "manifestDir": ".kiro-plugin",
+    "marketplaceDir": ".kiro-plugin",
+    "hostCatalogue": false,
     "harnessLeaf": ".kiro",
     "kind": "kiro-ide",
     "installRoots": [
@@ -76,6 +90,8 @@
   "opencode": {
     "harnessName": "opencode",
     "manifestDir": ".opencode-plugin",
+    "marketplaceDir": ".opencode-plugin",
+    "hostCatalogue": false,
     "harnessLeaf": ".aidlc",
     "kind": "store",
     "installRoots": [

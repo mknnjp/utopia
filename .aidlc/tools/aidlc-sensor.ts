@@ -5,7 +5,9 @@
 //   describe <id>                 — print manifest fields for one sensor.
 //   fire <id> --stage <slug>      — invoke a sensor against a stage output;
 //        --output-path <path>       emits SENSOR_FIRED then a paired terminal
-//                                   row (PASSED | FAILED | BUDGET_OVERRIDE).
+//        [--unit <name>]            row (PASSED | FAILED | COULD_NOT_RUN |
+//                                   BUDGET_OVERRIDE); the Unit, when named, is
+//                                   on every row.
 //
 // The dispatcher is a thin routing surface (Q4/Q5 of the locked plan):
 //   1. Validate inputs + resolve graph + generate Fire id (no audit lock held).
@@ -13,19 +15,26 @@
 //   3. Spawn the per-sensor script (no lock held; long-running is fine).
 //   4. Decide outcome via the truth table below (no lock held).
 //   5. If FAILED: write detail file via `wx`-flag + rename (race-free).
+//      If a verified PASS: drop this sensor's earlier detail files for the same
+//      output, so a fixed finding's report does not linger on disk.
 //   6. Acquire lock → emit terminal row → release.
 //   7. Print one compact JSON verdict line for deterministic callers.
 //   8. Exit 0. (Sensor failure ≠ CLI failure.)
 //
-// Truth-table branch ordering — locked, branch a precedes branch 0:
-//   a) signal === "SIGTERM" AND elapsed ≥ timeout - GRACE  → BUDGET_OVERRIDE
-//   0) error AND status===null AND signal===null           → PASSED script-error: spawn-failed
-//   b) status === 127                                       → PASSED tool-unavailable
-//   c) status === 0 AND JSON.pass === false                 → FAILED
-//   d) status === 0 AND JSON.pass === true                  → PASSED
-//   e) status non-0/non-127 (non-timeout)                   → PASSED script-error: exit-<n>
-//   f) bad JSON / missing pass                              → PASSED script-error: bad-output
-//   default                                                 → PASSED script-error: unknown
+// Truth-table branch ordering - locked, branch a precedes branch 0:
+//   a) signal === "SIGTERM" AND elapsed >= timeout - GRACE  -> BUDGET_OVERRIDE
+//   0) error AND status===null AND signal===null            -> COULD_NOT_RUN script-error: spawn-failed
+//   b) status === 127                                        -> PASSED tool-unavailable
+//   c) status === 0 AND JSON.pass === false                  -> FAILED
+//   d) status === 0 AND JSON.pass === true                   -> PASSED
+//   e) status non-0/non-127 (non-timeout)                    -> COULD_NOT_RUN script-error: exit-<n>
+//   f) bad JSON / missing pass                               -> COULD_NOT_RUN script-error: bad-output
+//   default                                                  -> COULD_NOT_RUN script-error: unknown
+//
+// A script that crashed, could not start or gave no verdict checked nothing,
+// so its row is its own state, never a pass and never a failure. Exit 127 is
+// the script's own answer that the tool it wraps is not in the project
+// (nothing to check there), so it stays a noted pass.
 //
 // CLI exits non-zero ONLY on dispatcher invocation errors (unknown id, missing
 // flag, missing path, matches-rejection). Sensor outcomes are advisory and
@@ -33,8 +42,24 @@
 
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve as pathResolve } from "node:path";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	realpathSync,
+	renameSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
+import {
+	dirname,
+	isAbsolute,
+	join,
+	type posix,
+	resolve as pathResolve,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 import { appendAuditEntryUnlocked } from "./aidlc-audit.ts";
 import {
@@ -42,33 +67,90 @@ import {
 	loadGraph,
 	loadSensors,
 	memoryTemplatesDir,
+	PATH_SET_SENSOR_IDS,
 	producersOf,
+	STAGE_WIDE_SENSOR_IDS,
 	type SensorFile,
 	templateEligibleArtifacts,
 } from "./aidlc-graph.ts";
 import {
 	artifactFilename,
+	asksForHelp,
+	auditLockDir,
 	codekbDir,
 	errorMessage,
 	getField,
+	holdsAuditLock,
 	isoTimestamp,
 	isPlainObject,
 	KNOWN_CODEKB_STAGES,
+	printUsageAndExit,
+	readRegularFileNoFollowOrThrow,
 	readStateFile,
 	recordDir,
 	resolveProjectDir,
 	sensorsDir,
 	usesStageLevelPerUnitArtifacts,
+	validateUnitName,
 	withAuditLock,
 } from "./aidlc-lib.ts";
 import {
+	aidlcDispatcherInvocation,
 	compiledExecutable,
 	resolveHarnessPath,
+	sensorFireUsage,
 } from "./aidlc-runtime-paths.ts";
+import { parseSensorManifest, type SensorManifest } from "./aidlc-sensor-schema.ts";
+import {
+	DEFAULT_SUBPROCESS_TIMEOUT_MS,
+	LONG_SUBPROCESS_TIMEOUT_MS,
+} from "./aidlc-runtime-budget.ts";
+import claimSourcesSensorSource from "../sensors/aidlc-claim-sources.md" with {
+	type: "text",
+};
+import linterSensorSource from "../sensors/aidlc-linter.md" with {
+	type: "text",
+};
+import requiredSectionsSensorSource from "../sensors/aidlc-required-sections.md" with {
+	type: "text",
+};
+import traceabilitySensorSource from "../sensors/aidlc-traceability.md" with {
+	type: "text",
+};
+import typeCheckSensorSource from "../sensors/aidlc-type-check.md" with {
+	type: "text",
+};
+import upstreamCoverageSensorSource from "../sensors/aidlc-upstream-coverage.md" with {
+	type: "text",
+};
 
 // --- Constants ---
 
-const DEFAULT_TIMEOUT_SECONDS = 60;
+// A script can probe the executable before running the check. The enclosing
+// hook leaves further headroom for dispatcher startup and terminal audit writes.
+const DEFAULT_TIMEOUT_SECONDS =
+	(DEFAULT_SUBPROCESS_TIMEOUT_MS + LONG_SUBPROCESS_TIMEOUT_MS) / 1000;
+const SENSOR_HELP_SOURCES = [
+	claimSourcesSensorSource,
+	linterSensorSource,
+	requiredSectionsSensorSource,
+	traceabilitySensorSource,
+	typeCheckSensorSource,
+	upstreamCoverageSensorSource,
+] as const;
+
+export function sensorHelpSummaries(): ReadonlyMap<string, string> {
+	return new Map(
+		SENSOR_HELP_SOURCES.map((source) => {
+			const manifest = parseSensorManifest(source);
+			return [`sensor-${manifest.id}`, manifest.description] as const;
+		}),
+	);
+}
+
+// Upper bound when the detail-file prune reads a report to learn which output
+// it describes. Matches the review-record cap; a larger report is kept.
+const DETAIL_FILE_MAX_BYTES = 4 * 1024 * 1024;
 
 // Locked at 100ms in the truth table to disambiguate timeout-induced SIGTERM
 // from external-SIGTERM (parent kill, Ctrl-C). Anything within GRACE of the
@@ -76,34 +158,118 @@ const DEFAULT_TIMEOUT_SECONDS = 60;
 const DEFAULT_TIMEOUT_GRACE_MS = 100;
 
 // Resolve sibling per-sensor script paths relative to THIS file's location,
-// not cwd. Mirrors aidlc-bolt.ts:84's spawnSibling pattern. The manifest
-// `command:` is `bun <harness>/tools/aidlc-sensor-<id>.ts` — the dispatcher
-// extracts the basename and resolves it next to itself, then spawns bun
-// with cwd=projectDir so the script's own file I/O resolves under the
-// user's project.
+// not cwd. The copy projection names `bun <harness>/tools/aidlc-sensor-<id>.ts`;
+// the release projection names `aidlc engine sensor-<id>`. Both resolve to
+// the same bundled module identity.
 const __FILE_DIR = dirname(fileURLToPath(import.meta.url));
 
 // --- Types ---
 
 type FireOutcome =
 	| { kind: "passed"; durationMs: number; note?: string }
+	| { kind: "could-not-run"; durationMs: number; note: string }
 	| {
 			kind: "failed";
 			durationMs: number;
 			findingsCount: number;
 			detailBody: string;
+			// The files a path-set fire found failing, as its script named them.
+			failedOutputs: string[];
 	  }
 	| { kind: "budget-override"; capValue: number; observedSeconds: number };
 
 interface FireContext {
 	sensor: SensorFile;
 	stageSlug: string;
+	unit: string | null;
 	outputPath: string;
 	fireId: string;
 	detailPath: string;
-	scriptArgs: string[]; // CLI args appended to the script invocation
+	scriptArgs: string[];
 	scriptAbsPath: string; // sibling-resolved absolute path
 	timeoutMs: number;
+	// The outputs a path-set fire covers (`--paths-stdin json`), handed to the
+	// script on stdin; null for a fire on one output.
+	pathSet: string[] | null;
+}
+
+function sensorLockOwnerSnapshot(path: string): Record<string, unknown> {
+	try {
+		const owner: unknown = JSON.parse(
+			readRegularFileNoFollowOrThrow(path, "sensor audit lock owner", 4096).toString("utf-8"),
+		);
+		if (!isPlainObject(owner)) return { state: "malformed" };
+		return {
+			state: "observed",
+			pid: Number.isSafeInteger(owner.pid) ? owner.pid : null,
+			startedAtMs: typeof owner.startedAtMs === "number" ? owner.startedAtMs : null,
+			tokenPresent: typeof owner.token === "string",
+			processGenerationPresent: typeof owner.processGeneration === "string",
+		};
+	} catch (error) {
+		return { state: "unavailable", code: (error as NodeJS.ErrnoException).code ?? null };
+	}
+}
+
+/** Measure the existing lock without logging or probing owners while holding it. */
+function withSensorAuditLock(
+	projectDir: string,
+	ctx: FireContext,
+	phase: "fired" | "terminal",
+	append: () => void,
+): void {
+	const started = process.hrtime.bigint();
+	const times: { entered: bigint | null; bodyEnded: bigint | null } = {
+		entered: null, bodyEnded: null,
+	};
+	let failed = false;
+	let failure: string | null = null;
+	try {
+		withAuditLock(projectDir, () => {
+			times.entered = process.hrtime.bigint();
+			try { append(); }
+			finally { times.bodyEnded = process.hrtime.bigint(); }
+		});
+	} catch (error) {
+		failed = true;
+		failure = errorMessage(error).slice(0, 512);
+		throw error;
+	} finally {
+		const returned = process.hrtime.bigint();
+		const { entered, bodyEnded } = times;
+		if (failed || process.env.AIDLC_TEST_SENSOR_LOCK_TRACE === "1") {
+			try {
+				// Owner files are sampled only after a failure, with a bounded,
+				// no-follow read. These observations never authorize any action.
+				const lockDir = failed ? auditLockDir(projectDir) : null;
+				const milliseconds = (value: bigint) => Number(value) / 1_000_000;
+				console.error(`AIDLC_SENSOR_AUDIT_LOCK ${JSON.stringify({
+					at: Date.now(),
+					pid: process.pid,
+					fireId: ctx.fireId,
+					sensorId: ctx.sensor.id,
+					phase,
+					failed,
+					error: failure,
+					startedNs: started.toString(),
+					enteredNs: entered?.toString() ?? null,
+					bodyEndedNs: bodyEnded?.toString() ?? null,
+					returnedNs: returned.toString(),
+					acquireMs: milliseconds((entered ?? returned) - started),
+					bodyMs: entered === null || bodyEnded === null ? null : milliseconds(bodyEnded - entered),
+					releaseMs: bodyEnded === null ? null : milliseconds(returned - bodyEnded),
+					totalMs: milliseconds(returned - started),
+					releasePending: holdsAuditLock(projectDir),
+					...(lockDir ? {
+						owner: sensorLockOwnerSnapshot(join(lockDir, "owner.json")),
+						coordinationOwner: sensorLockOwnerSnapshot(join(`${lockDir}.reap`, "owner.json")),
+					} : {}),
+				})}`);
+			} catch {
+				// Diagnostics must not replace the original audit result/error.
+			}
+		}
+	}
 }
 
 interface FireVerdict {
@@ -143,34 +309,67 @@ function dispatchError(msg: string): never {
 
 // --- Sibling-script resolver ---
 //
-// Manifest `command:` is `bun <harness>/tools/aidlc-sensor-<id>.ts`. The
-// dispatcher extracts the .ts basename and resolves it next to itself.
+// The dispatcher extracts either the .ts basename or the native delegate name
+// and resolves it next to itself.
 // This decouples script discovery from cwd — works in tests where
 // projectDir doesn't carry a .claude/tools/ tree, AND in production where
-// it does. Sibling resolution mirrors aidlc-bolt.ts:84.
+// it does. Sibling resolution mirrors spawnSibling in aidlc-bolt.ts.
 //
 // AIDLC_SENSOR_SCRIPT_DIR overrides the resolution directory — the script
 // seam mirroring AIDLC_SENSORS_DIR for manifests. Tests that exercise stub
 // per-sensor scripts point it at an isolated temp dir so they NEVER copy
 // stubs into the shipped dist/.../tools/ tree (which both pollutes the
-// version-controlled artifact on a crashed run and makes concurrent test
+// generated artifact on a crashed run and makes concurrent test
 // files race on a shared directory). Unset in production → sibling resolution
-// against __FILE_DIR, exactly as before.
-function resolveScriptPath(command: string): string {
+// against the compiled harness tools directory or __FILE_DIR.
+// Strip both separators before applying the host's path rules; otherwise
+// Windows treats a backslash traversal preserved on POSIX as directories.
+export function sensorScriptPathIn(
+	command: string,
+	scriptDir: string,
+	path: Pick<typeof posix, "join" | "dirname" | "resolve"> = { join, dirname, resolve: pathResolve },
+): string {
 	const tokens = command.trim().split(/\s+/);
-	// Find the first .ts token (drops the "bun" prefix or any flags).
 	const tsToken = tokens.find((t) => t.endsWith(".ts"));
-	if (!tsToken) {
-		dispatchError(`manifest command lacks a .ts script: "${command}"`);
+	const engineIndex = tokens.indexOf("engine");
+	const nativeDelegate = engineIndex >= 0 ? tokens[engineIndex + 1] : undefined;
+	if (!tsToken && !nativeDelegate?.startsWith("sensor-")) {
+		throw new Error(`manifest command lacks a .ts script: "${command}"`);
 	}
-	// String.split always returns a non-empty array, so the last element
-	// is always defined — indexed access keeps the basename typed as
-	// string without a non-null assertion.
-	const parts = tsToken.split("/");
-	const basename = parts[parts.length - 1];
+	const basename = nativeDelegate?.startsWith("sensor-")
+		? `aidlc-${nativeDelegate}.ts`
+		: (tsToken ?? "").split(/[\\/]/).pop() ?? "";
+	if (basename === ".ts" || !basename.endsWith(".ts")) {
+		throw new Error(`manifest command names no script file: "${command}"`);
+	}
+	const resolved = path.join(scriptDir, basename);
+	if (path.resolve(path.dirname(resolved)) !== path.resolve(scriptDir)) {
+		throw new Error(`sensor script must be in ${scriptDir}: "${command}"`);
+	}
+	return resolved;
+}
+
+function resolveScriptPath(command: string): string {
 	const scriptDir = process.env.AIDLC_SENSOR_SCRIPT_DIR
 		?? (compiledExecutable() ? resolveHarnessPath(["tools"]) : __FILE_DIR);
-	return join(scriptDir, basename);
+	try {
+		return sensorScriptPathIn(command, scriptDir);
+	} catch (error) {
+		dispatchError(errorMessage(error));
+	}
+}
+
+// Which flag carries the path a sensor analyses. A manifest's `input_schema`
+// is its declared invocation contract, so a sensor that declares `file_path`
+// is a code sensor whoever ships it - that is the only signal a plugin can
+// reach. The shipped id pair stays as the fallback for a manifest that
+// declares no contract at all.
+export function sensorTakesFilePath(manifest: SensorManifest, id: string): boolean {
+	const declared = manifest.input_schema;
+	if (declared && Object.keys(declared).length > 0) {
+		return Object.hasOwn(declared, "file_path");
+	}
+	return id === "linter" || id === "type-check";
 }
 
 export function resolveSensorScriptPath(id: string): string {
@@ -212,7 +411,6 @@ function handleList(): void {
 	if (sensors.length === 0) {
 		return;
 	}
-	// Tabular output: id  kind  description
 	for (const s of sensors) {
 		console.log(`${s.id}\t${s.manifest.kind}\t${s.manifest.description}`);
 	}
@@ -260,7 +458,8 @@ function handleDescribe(args: string[]): void {
 //   - codekb producers (reverse-engineering): glob every repo dir under the
 //     space-level codekb root.
 //   - per-unit Construction producers (for_each: unit-of-work): use the
-//     stage-level directory when the effective plan skips Units Generation;
+//     stage-level directory when the work has no Units (the plan skips Units
+//     Generation, or the work passed it without running it);
 //     otherwise glob every <record>/construction/<unit>/<slug>/.
 //   - everything else: <record>/<phase>/<slug>/<name>.md.
 //
@@ -343,7 +542,8 @@ function consumeWithProducer(slug: string): string {
 // Step 1 — validate + resolve all inputs + generate Fire id (no lock).
 // Step 4-8 — emit FIRED, spawn, decide outcome, write detail (if FAILED),
 //            emit terminal row.
-// Step 9 — exit 0.
+// Step 9 -- print the machine-readable verdict.
+// Step 10 -- exit 0.
 function handleFire(args: string[]): void {
 	const id = args[0];
 	if (!id || id.startsWith("--")) {
@@ -355,6 +555,12 @@ function handleFire(args: string[]): void {
 		dispatchError("fire requires --output-path <path>");
 
 	const stageSlug = flags.stage;
+	// The Unit whose work the output belongs to, when the caller knows it: under
+	// unit-major Construction the rows are read per Unit.
+	const unit = flags.unit ?? null;
+	if (unit !== null && validateUnitName(unit) !== null) {
+		dispatchError(`fire --unit expects a Unit name, got "${unit}"`);
+	}
 	// Resolve outputPath to absolute upfront so the per-sensor script and the
 	// dispatcher both see the same path regardless of cwd. The dispatcher
 	// itself runs from the user's cwd; the per-sensor script runs with
@@ -406,6 +612,7 @@ function handleFire(args: string[]): void {
 			`output path "${outputPath}" does not match sensor "${id}" filter "${matches}"`,
 		);
 	}
+	const pathSet = flags["paths-stdin"] === undefined ? null : readPathSet(id, flags["paths-stdin"], outputPath, matches);
 
 	// --- 1e. Generate Fire id (8 hex chars) ---
 	const fireId = generateFireId();
@@ -420,12 +627,15 @@ function handleFire(args: string[]): void {
 	// "art1:producer1,art2:producer2,..." sourced from the
 	// GraphStage.consumes[].artifact field (producer resolved via
 	// producersOf so a producing-directory citation can count as
-	// coverage), filtered to artifacts that exist on disk: a consume
-	// whose producing stage was skipped by the scope (or runtime-skipped,
-	// e.g. reverse-engineering on greenfield) never produced its file,
-	// and demanding the output prose reference it would be a guaranteed
-	// false SENSOR_FAILED on every run of that stage in that scope.
-	const isCodeSensor = id === "linter" || id === "type-check";
+	// coverage), filtered to the required artifacts that exist on disk: a
+	// consume whose producing stage was skipped by the scope (or
+	// runtime-skipped, e.g. reverse-engineering on greenfield) never produced
+	// its file, and demanding the output prose reference it would be a
+	// guaranteed false SENSOR_FAILED on every run of that stage in that scope.
+	// An optional consume (`required: false`) may not have informed the
+	// output, and citing one that did not would be false provenance, unless the
+	// stage marks it `cited: true` (its deliverables cite it when it exists).
+	const isCodeSensor = sensorTakesFilePath(sensor.manifest, id);
 	const scriptArgs: string[] = ["--stage", stageSlug];
 	if (isCodeSensor) {
 		scriptArgs.push("--file-path", outputPath);
@@ -433,7 +643,9 @@ function handleFire(args: string[]): void {
 		scriptArgs.push("--output-path", outputPath);
 	}
 	if (id === "upstream-coverage") {
+		const cited = new Set(stageNode.cites ?? []);
 		const consumeSlugs = (stageNode.consumes ?? [])
+			.filter((c) => c.required !== false || cited.has(c.artifact))
 			.map((c) => c.artifact)
 			.filter((a) => typeof a === "string" && a.length > 0);
 		scriptArgs.push(
@@ -447,7 +659,7 @@ function handleFire(args: string[]): void {
 	// not only the file whose write triggered the hook. Questions/timestamp
 	// scaffolding is excluded from that union. claim-sources still locates the
 	// sibling questions file explicitly as its source universe.
-	if (id === "upstream-coverage" || id === "claim-sources") {
+	if (STAGE_WIDE_SENSOR_IDS.has(id)) {
 		scriptArgs.push(
 			"--deliverables",
 			templateEligibleArtifacts([
@@ -458,7 +670,7 @@ function handleFire(args: string[]): void {
 	}
 
 	// --- 3. Pre-compute detail-file path (used only on FAILED) ---
-		// <record>/.aidlc-sensors/<stage-slug>/<sensor-id>-<fire-id>.md
+		// <record>/.aidlc-engine/sensors/<stage-slug>/<sensor-id>-<fire-id>.md
 
 	// required-sections additionally takes the TPL template seam: the
 	// templates source-of-truth dir + the stage's template-eligible artifact
@@ -467,7 +679,8 @@ function handleFire(args: string[]): void {
 	// stageNode — exactly as --consumes is threaded for upstream-coverage above.
 	// Eligibility = the `produces` artifact names that are NOT questions/timestamp
 	// markers (the stem==artifact key is unsound for those non-prose files). The
-	// script applies a resolved template only when the output stem ∈ this set.
+	// script applies a resolved template only when the output file is one of
+	// these artifacts' files (artifactFilename).
 	// AIDLC_TEMPLATES_DIR is a test/relocation seam mirroring AIDLC_RULES_DIR;
 	// the default lookup is the workspace method tree's templates/ dir —
 	// <projectDir>/aidlc/spaces/<space>/memory/templates — derived via
@@ -489,7 +702,6 @@ function handleFire(args: string[]): void {
 		// §10 MIDDLE branch: the framework-default templates dir (engine-shipped,
 		// read-only, space-independent). The sensor consults it ONLY when the team
 		// override above misses, so resolution is team → framework-default → floor.
-		// Ships zero files at GA → the branch gracefully falls through to the floor.
 		scriptArgs.push("--framework-templates-dir", frameworkTemplatesDir());
 	}
 	const detailDir = join(sensorsDir(projectDir), stageSlug);
@@ -510,22 +722,26 @@ function handleFire(args: string[]): void {
 	const ctx: FireContext = {
 		sensor,
 		stageSlug,
+		unit,
 		outputPath,
 		fireId,
 		detailPath,
 		scriptArgs,
 		scriptAbsPath,
 		timeoutMs,
+		pathSet,
 	};
+	if (pathSet !== null) ctx.scriptArgs.push("--paths-stdin", "json");
 
 	// --- 4. Lock window A — emit SENSOR_FIRED ---
-	withAuditLock(projectDir, () => {
+	withSensorAuditLock(projectDir, ctx, "fired", () => {
 		appendAuditEntryUnlocked(
 			"SENSOR_FIRED",
 			{
 				"Fire id": fireId,
 				"Sensor ID": id,
 				"Stage slug": stageSlug,
+				...(unit ? { Unit: unit } : {}),
 				"Output path": relativizePath(outputPath, projectDir),
 			},
 			projectDir,
@@ -540,14 +756,15 @@ function handleFire(args: string[]): void {
 		BUNDLED_SENSOR_IDS.has(ctx.sensor.id) &&
 		!process.env.AIDLC_SENSOR_SCRIPT_DIR;
 	const command = useBundledWorker
-		? [executable, "__sensor-script", ctx.sensor.id, ...ctx.scriptArgs]
-		: executable
-			? [executable, "__sensor-script-file", ctx.sensor.id, ...ctx.scriptArgs]
-			: [process.execPath, ctx.scriptAbsPath, ...ctx.scriptArgs];
+			? [executable, "engine", "__sensor-script", ctx.sensor.id, ...ctx.scriptArgs]
+			: executable
+				? [executable, "engine", "__sensor-script-file", ctx.sensor.id, ...ctx.scriptArgs]
+				: [process.execPath, ctx.scriptAbsPath, ...ctx.scriptArgs];
 	const result = spawnSync(command[0], command.slice(1), {
 		encoding: "utf-8",
 		timeout: timeoutMs,
 		cwd: projectDir,
+		...(ctx.pathSet !== null ? { input: JSON.stringify(ctx.pathSet) } : {}),
 	});
 	const elapsedMs = Date.now() - startedAt;
 
@@ -572,8 +789,18 @@ function handleFire(args: string[]): void {
 		}
 	}
 
+	// --- 7b. On a verified pass, drop this output's superseded detail files ---
+	// Named per fire id, so a pass cannot overwrite an earlier failure's report;
+	// without this the directory keeps showing a failure that no longer exists.
+	// A noted pass (tool-unavailable, detail-write-failed), a check that could
+	// not run and a budget override do not verify a clean output, so they
+	// supersede nothing.
+	if (finalOutcome.kind === "passed" && finalOutcome.note === undefined) {
+		pruneSupersededDetailFiles(detailDir, id, outputPath, startedAt);
+	}
+
 	// --- 8. Lock window B — emit terminal row ---
-	withAuditLock(projectDir, () => {
+	withSensorAuditLock(projectDir, ctx, "terminal", () => {
 		emitTerminal(ctx, finalOutcome, projectDir);
 	});
 
@@ -588,7 +815,7 @@ function handleFire(args: string[]): void {
 			finalOutcome.kind === "failed"
 				? relativizePath(detailPath, projectDir)
 				: null,
-		...(finalOutcome.kind === "passed" && finalOutcome.note
+		...((finalOutcome.kind === "passed" || finalOutcome.kind === "could-not-run") && finalOutcome.note
 			? { note: finalOutcome.note }
 			: {}),
 	};
@@ -596,6 +823,99 @@ function handleFire(args: string[]): void {
 
 	// --- 10. Process exit 0 ---
 	process.exit(0);
+}
+
+// --- Superseded detail-file prune ---
+//
+// pruneSupersededDetailFiles: remove the detail files earlier fires of this
+// sensor left for this output, once a fire has verified the output clean.
+//
+// A detail file is named `<id>-<fireId>.md`, and the fire id is fresh per fire,
+// so a later fire never overwrites an earlier one. Without a prune a failure's
+// report stays on disk after the output is fixed, and the directory still shows
+// a failure that no longer exists. The caller runs this only on a verified pass.
+//
+// Three scoping rules keep the prune safe:
+//   - only `<sensorId>-<8 hex>.md` is considered, so a sibling sensor sharing the
+//     stage directory is never touched (an exact fire-id shape, not a prefix, so
+//     one sensor id cannot match another whose id extends it);
+//   - only a report whose recorded `**Output path**` is this fire's output is
+//     removed. The gate fires one sensor across every declared artifact of a
+//     stage, so a pass on one output must not delete another output's live
+//     report, which the gate refusal and the SENSOR_FAILED row still name;
+//   - only files last modified BEFORE this fire began are removed, so the report
+//     of a fire that overlapped this one survives.
+//
+// A report that cannot be read, is not a regular file, or exceeds
+// DETAIL_FILE_MAX_BYTES is kept: when in doubt, keep the report.
+//
+// Returns the number of files removed. Never throws: hygiene must not change a
+// sensor's outcome.
+export function pruneSupersededDetailFiles(
+	detailDir: string,
+	sensorId: string,
+	outputPath: string,
+	cutoffMs: number,
+): number {
+	let removed = 0;
+	try {
+		if (!existsSync(detailDir)) {
+			return 0;
+		}
+		const detailName = new RegExp(
+			`^${sensorId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-[0-9a-f]{8}\\.md$`,
+		);
+		const output = canonicalOutputPath(outputPath);
+		for (const name of readdirSync(detailDir)) {
+			if (!detailName.test(name)) {
+				continue;
+			}
+			const path = join(detailDir, name);
+			try {
+				const { bytes, mtimeMs } = readRegularFileNoFollowOrThrow(
+					path,
+					"sensor detail file",
+					DETAIL_FILE_MAX_BYTES,
+					undefined,
+					true,
+				);
+				if (mtimeMs >= cutoffMs) {
+					continue;
+				}
+				const recorded = recordedOutputPath(bytes.toString("utf-8"));
+				if (recorded === null || canonicalOutputPath(recorded) !== output) {
+					continue;
+				}
+				unlinkSync(path);
+				removed += 1;
+			} catch {
+				// Vanished, unreadable, or oversized: keep it.
+			}
+		}
+	} catch {
+		// Hygiene only: a prune failure must not change the sensor's outcome.
+	}
+	return removed;
+}
+
+// The `**Output path**:` header line buildDetailBody writes, or null when the
+// report does not carry one.
+function recordedOutputPath(body: string): string | null {
+	const match = /^\*\*Output path\*\*: (.+)$/m.exec(body);
+	return match ? match[1].trim() : null;
+}
+
+// Resolve symlinks where possible so two spellings of one output compare equal.
+// The gate passes real paths while a write hook passes the path as written,
+// which on Windows can differ in separators and drive-letter case.
+function canonicalOutputPath(path: string): string {
+	let resolved = path;
+	try {
+		resolved = realpathSync(path);
+	} catch {
+		// Keep the spelling as given; the comparison key still normalizes it.
+	}
+	return comparisonKey(normalizePathForComparison(resolved));
 }
 
 // --- Stdout noise stripping ---
@@ -617,7 +937,7 @@ export function stripStdoutNoise(stdout: string, startChar: string): string {
 // Branch ordering is LOAD-BEARING: branch a (timeout) precedes branch 0
 // (true spawn failure) because Node 16+ sets result.error alongside
 // signal === "SIGTERM" on timeout. Reversed order swallows timeouts as
-// script-error and branch a becomes dead code.
+// could-not-run and branch a becomes dead code.
 function decideOutcome(
 	ctx: FireContext,
 	result: ReturnType<typeof spawnSync>,
@@ -643,7 +963,7 @@ function decideOutcome(
 	// (e.g., bun off PATH → ENOENT). Narrowed so timeouts can't sneak in.
 	if (result.error && result.status === null && result.signal === null) {
 		return {
-			kind: "passed",
+			kind: "could-not-run",
 			durationMs: elapsedMs,
 			note: `script-error: spawn-failed: ${(result.error as NodeJS.ErrnoException).code ?? "unknown"}`,
 		};
@@ -669,14 +989,14 @@ function decideOutcome(
 			parsed = JSON.parse(stripStdoutNoise(stdout, "{"));
 		} catch {
 			return {
-				kind: "passed",
+				kind: "could-not-run",
 				durationMs: elapsedMs,
 				note: "script-error: bad-output",
 			};
 		}
 		if (!isPlainObject(parsed) || typeof parsed.pass !== "boolean") {
 			return {
-				kind: "passed",
+				kind: "could-not-run",
 				durationMs: elapsedMs,
 				note: "script-error: bad-output",
 			};
@@ -699,27 +1019,30 @@ function decideOutcome(
 				durationMs: elapsedMs,
 				findingsCount,
 				detailBody,
+				failedOutputs: Array.isArray(out.failed_outputs)
+					? out.failed_outputs.filter((p): p is string => typeof p === "string" && p !== "")
+					: [],
 			};
 		}
 		// Branch d — PASSED
 		return { kind: "passed", durationMs: elapsedMs };
 	}
 
-	// Branch e — non-zero, non-127, non-timeout exit (incl. external SIGTERM
-	// before the timeout window). Advisory script-error.
+	// Branch e - non-zero, non-127, non-timeout exit (incl. external SIGTERM
+	// before the timeout window): the check could not run.
 	if (
 		result.signal === "SIGTERM" &&
 		elapsedMs < timeoutMs - DEFAULT_TIMEOUT_GRACE_MS
 	) {
 		return {
-			kind: "passed",
+			kind: "could-not-run",
 			durationMs: elapsedMs,
 			note: "script-error: external-sigterm",
 		};
 	}
 	if (result.status !== null) {
 		return {
-			kind: "passed",
+			kind: "could-not-run",
 			durationMs: elapsedMs,
 			note: `script-error: exit-${result.status}`,
 		};
@@ -729,7 +1052,7 @@ function decideOutcome(
 	// rather than collapsing to the unknown default below.
 	if (result.signal !== null) {
 		return {
-			kind: "passed",
+			kind: "could-not-run",
 			durationMs: elapsedMs,
 			note: `script-error: signal-${result.signal}`,
 		};
@@ -737,7 +1060,7 @@ function decideOutcome(
 
 	// Default — should be unreachable; advisory always closes the pair.
 	return {
-		kind: "passed",
+		kind: "could-not-run",
 		durationMs: elapsedMs,
 		note: "script-error: unknown",
 	};
@@ -750,10 +1073,10 @@ function decideOutcome(
 // generically. Fork sensors that omit the field fall back to 0; doctor's
 // sibling-coverage check will surface that as a fork-sensor contract gap.
 //
-// Rationale: v3 control-plane / data-plane separation puts per-sensor
+// Rationale: control-plane / data-plane separation puts per-sensor
 // findings derivation in the script (the script knows its own pass
-// threshold; e.g., required-sections script knows 2 H2 sections is the
-// minimum). The dispatcher stays generic and adds new framework sensors
+// threshold; e.g., the required-sections script counts the template headings
+// an output lacks). The dispatcher stays generic and adds new framework sensors
 // without an arm in this function.
 function readFindingsCount(out: Record<string, unknown>): number {
 	const v = out.findings_count;
@@ -821,12 +1144,13 @@ function emitTerminal(
 	outcome: FireOutcome,
 	projectDir: string,
 ): void {
-	const { sensor, stageSlug, outputPath, fireId, detailPath } = ctx;
+	const { sensor, stageSlug, unit, outputPath, fireId, detailPath } = ctx;
 	const id = sensor.id;
 	const baseFields: Record<string, string> = {
 		"Fire id": fireId,
 		"Sensor ID": id,
 		"Stage slug": stageSlug,
+		...(unit ? { Unit: unit } : {}),
 		"Output path": relativizePath(outputPath, projectDir),
 	};
 
@@ -841,14 +1165,23 @@ function emitTerminal(
 		appendAuditEntryUnlocked("SENSOR_PASSED", fields, projectDir);
 		return;
 	}
+	if (outcome.kind === "could-not-run") {
+		appendAuditEntryUnlocked("SENSOR_COULD_NOT_RUN", {
+			...baseFields,
+			"Duration ms": String(outcome.durationMs),
+			Note: outcome.note,
+		}, projectDir);
+		return;
+	}
 	if (outcome.kind === "failed") {
 		// detailPath is absolute; emit it as the project-relative path for
 		// human readability. The audit-format spec calls for a relative
-			// path under the active record's .aidlc-sensors/ directory.
+			// path under the active record's .aidlc-engine/sensors/ directory.
 		const fields: Record<string, string> = {
 			...baseFields,
 			"Detail path": relativizePath(detailPath, projectDir),
 			"Findings count": String(outcome.findingsCount),
+			...(outcome.failedOutputs.length > 0 ? { "Failed outputs": failedOutputsField(outcome.failedOutputs) } : {}),
 		};
 		appendAuditEntryUnlocked("SENSOR_FAILED", fields, projectDir);
 		return;
@@ -861,6 +1194,44 @@ function emitTerminal(
 		"Observed value": String(outcome.observedSeconds),
 	};
 	appendAuditEntryUnlocked("SENSOR_BUDGET_OVERRIDE", fields, projectDir);
+}
+
+// --- Path-set fire ---
+//
+// The gate at a codekb stage fires a PATH_SET_SENSOR_IDS sensor once over
+// every repository's outputs, handing the paths on stdin as a JSON list (one
+// Windows command line holds about 32k characters, not 1,710 paths). Each path
+// passes the same checks as --output-path; the fired output leads the set.
+function readPathSet(id: string, format: string, outputPath: string, matches: string | undefined): string[] {
+	if (!PATH_SET_SENSOR_IDS.has(id)) dispatchError(`sensor "${id}" does not take --paths-stdin`);
+	if (format !== "json") dispatchError(`--paths-stdin expects "json", got "${format}"`);
+	let raw: unknown;
+	try {
+		raw = JSON.parse(readFileSync(0, "utf-8"));
+	} catch (err) {
+		dispatchError(`--paths-stdin expects a JSON list of paths on stdin: ${errorMessage(err)}`);
+	}
+	if (!Array.isArray(raw) || !raw.every((p) => typeof p === "string" && p !== "")) {
+		dispatchError("--paths-stdin expects a JSON list of paths on stdin");
+	}
+	const set = [outputPath];
+	for (const entry of raw as string[]) {
+		const path = isAbsolute(entry) ? entry : pathResolve(process.cwd(), entry);
+		if (set.includes(path)) continue;
+		if (!existsSync(path)) dispatchError(`output path does not exist: ${path}`);
+		if (matches !== undefined && !matchesGlob(matches, path)) {
+			dispatchError(`output path "${path}" does not match sensor "${id}" filter "${matches}"`);
+		}
+		set.push(path);
+	}
+	return set;
+}
+
+// A failed path-set fire's row names the failing files, the first 20 and a count.
+function failedOutputsField(paths: string[]): string {
+	const SHOWN = 20;
+	const more = paths.length - SHOWN;
+	return `${paths.slice(0, SHOWN).join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
 }
 
 // --- Glob matcher (capability filter) ---
@@ -922,32 +1293,39 @@ function globToRegex(glob: string): RegExp {
 
 // --- Help ---
 
-function printHelp(): void {
-	console.log(`Usage: aidlc-sensor <subcommand>
-
-Subcommands:
-  list                              List framework sensors
-  describe <id>                     Print manifest fields
-  fire <id> --stage <slug>          Fire a sensor against an output;
-       --output-path <path>           emits SENSOR_FIRED + paired terminal row
-
-  --help, -h                        Show this message`);
+// What `--help` prints, for the tool or one subcommand (#2449).
+function sensorUsage(subcommand: string | undefined): string {
+	const invoke = (verb: string) => aidlcDispatcherInvocation(`sensor ${verb}`);
+	const usage: Record<string, string[]> = {
+		list: [invoke("list"), "  Lists the framework sensors: id, kind and description."],
+		describe: [
+			`${invoke("describe")} <id>`,
+			"  Prints one sensor's manifest fields. Required: <id>.",
+		],
+		fire: [
+			sensorFireUsage(),
+			"  Fires a sensor against a stage output; emits SENSOR_FIRED and its paired result row.",
+			"  Required: <id>, --stage, --output-path. Options: --unit <name> (named on both rows)",
+		],
+	};
+	if (subcommand !== undefined && usage[subcommand]) return usage[subcommand].join("\n");
+	return `Usage: aidlc-sensor <subcommand>\n\n${Object.values(usage)
+		.map((lines) => lines.join("\n"))
+		.join("\n\n")}`;
 }
 
 // --- main ---
 
 export function main(argv: string[]): void {
 	const [cmd, ...args] = argv;
-	if (cmd === "--help" || cmd === "-h") {
-		printHelp();
-		return;
-	}
+	if (cmd !== undefined && asksForHelp([cmd])) printUsageAndExit(sensorUsage(undefined));
 	if (cmd === undefined) {
 		process.stderr.write(
 			"Usage: aidlc-sensor <subcommand>. Valid: describe, fire, list. Run with --help for detail.\n",
 		);
 		process.exit(1);
 	}
+	if (asksForHelp(args)) printUsageAndExit(sensorUsage(cmd));
 	switch (cmd) {
 		case "list":
 			handleList();

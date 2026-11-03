@@ -91,7 +91,7 @@ folder layout is framework housekeeping, not something they need to read.
 ### Step 5: Update State and Audit
 
 1. Mark workspace-scaffold as `[x]` completed in `<record>/aidlc-state.md`
-2. Append WORKSPACE_SCAFFOLDED event to `<record>/audit/<host>-<clone>.md`
+2. The engine records WORKSPACE_SCAFFOLDED in the audit trail; never append it yourself
 
 ### Step 6: Auto-Proceed
 
@@ -110,10 +110,8 @@ A customised setup report should import the relevant manifests here.
 
 ## Learn
 
-Follow stage-protocol.md §13 by maintaining
-`<record>/<phase>/<stage>/memory.md` under the four standard headings; the
-memory file stays in the artefact directory and the stage file remains
-immutable. This auto-proceeding bootstrap stage (`gate: false`) has no
-approval gate, so skip surfacing and persisting learnings and the mandatory
-"Anything to add for next time?" question; the gate-bound ritual begins with
-the first post-initialization stage.
+When `directive.protocol_modules` lists `learnings`, follow
+`stage-protocol-learnings.md`: keep the diary at `directive.memory_path` while
+working, and take the learnings step before the approval gate; that module says
+when it asks the person anything. When the module is absent, skip both the diary
+and the step.

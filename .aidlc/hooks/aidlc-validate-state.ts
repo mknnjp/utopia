@@ -3,34 +3,53 @@
 // (and not in SessionStart source=compact) ensures a single, timestamped record
 // of compaction — fired at the real compaction moment, with full state-file
 // context available.
-//
-// Also writes aidlc-docs/.aidlc-recovery.md as a breadcrumb for the orchestrator
-// to detect compaction-related state corruption on the next turn.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { appendAuditEntry } from "../tools/aidlc-audit.ts";
 import {
+  hookStandsOutside,
+  enterHookWorkflow,
   auditFilePath,
   errorMessage,
   getField,
   hooksHealthDir,
+  writeHookStatusFile,
   invalidateActiveDirectiveContext,
   isoTimestamp,
   recordHookDrop,
-  recoveryFilePath,
   resolveProjectDirFromHook,
   stateFilePath,
   validSessionId,
 } from "../tools/aidlc-lib.ts";
+import { clearRulesDelivered } from "../tools/aidlc-rules-held.ts";
 
 export async function run(input: string): Promise<number> {
-const projectDir = resolveProjectDirFromHook(import.meta.url);
+  const projectDir = resolveProjectDirFromHook(import.meta.url);
+  let payloadSession: unknown;
+  try {
+    const payload = JSON.parse(input) as { session_id?: unknown; sessionId?: unknown };
+    payloadSession = payload.session_id ?? payload.sessionId;
+  } catch {
+    // Missing/malformed payload: resolve without a payload session.
+  }
+  // The compacted chat no longer holds the rule text it was handed (#2023),
+  // whatever workflow it works on.
+  if (typeof payloadSession === "string") clearRulesDelivered(projectDir, payloadSession);
+  // A compaction in a conversation that has not joined the selected workflow
+  // leaves that workflow's heartbeat and ledger alone.
+  const workflow = enterHookWorkflow(projectDir, payloadSession);
+  try {
+    if (hookStandsOutside(workflow)) return 0;
+    return await compact(input, projectDir);
+  } finally {
+    workflow.restore();
+  }
+}
+
+async function compact(input: string, projectDir: string): Promise<number> {
 const stateFile = stateFilePath(projectDir);
 
-// Write health heartbeat
 const healthDir = hooksHealthDir(projectDir);
-mkdirSync(healthDir, { recursive: true });
-writeFileSync(join(healthDir, "validate-state.last"), isoTimestamp(), "utf-8");
+writeHookStatusFile(healthDir, "validate-state.last", isoTimestamp());
 
 if (!existsSync(stateFile)) return 0;
 
@@ -45,7 +64,6 @@ try {
   // Missing/malformed or foreign compaction is coordination-neutral.
 }
 
-// Validate state file has required sections
 const missing: string[] = [];
 if (!content.includes("## Stage Progress")) missing.push("Stage Progress");
 if (!content.includes("## Current Status")) missing.push("Current Status");
@@ -54,21 +72,7 @@ if (missing.length > 0) {
   console.error(`WARNING: aidlc-state.md missing sections: ${missing.join(", ")}`);
 }
 
-const stateStatus = missing.length > 0
-  ? `INVALID — missing sections: ${missing.join(", ")}`
-  : "valid (all required sections present)";
-
-// Write recovery breadcrumb so the orchestrator can detect compaction-related state corruption
 const currentStage = getField(content, "Current Stage") ?? "";
-const timestamp = isoTimestamp();
-const recoveryFile = recoveryFilePath(projectDir);
-writeFileSync(
-  recoveryFile,
-  `# AIDLC Recovery Breadcrumb\n**Last validated**: ${timestamp}\n**Current stage**: ${currentStage}\n**State file**: ${stateStatus}\n`,
-  "utf-8"
-);
-
-// Emit SESSION_COMPACTED if an audit file exists for this workflow.
 const auditFile = auditFilePath(projectDir);
 if (existsSync(auditFile)) {
   try {
@@ -82,7 +86,7 @@ if (existsSync(auditFile)) {
     );
   } catch (e) {
     recordHookDrop(projectDir, "validate-state", errorMessage(e));
-    // Non-fatal — recovery breadcrumb is the primary signal.
+    // Non-fatal: the heartbeat above still records that the hook ran.
   }
 }
 return 0;

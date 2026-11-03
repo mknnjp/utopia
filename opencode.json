@@ -1,0 +1,16 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "skills": { "paths": [".aidlc/skills"] },
+  "instructions": [".aidlc/onboarding.md", "aidlc/active-memory/**/*.md"],
+  "permission": {
+    "edit": {
+      ".aidlc/tools/**": "ask",
+      ".aidlc/hooks/**": "ask"
+    },
+    "bash": {
+      "rm -r*": "ask",
+      "git push *": "ask",
+      "bun .aidlc/tools/*": "allow"
+    }
+  }
+}

@@ -25,8 +25,8 @@ never inject the persona text yourself.
 
 For a multi-agent stage, load `stage-protocol-ensemble.md` when the directive
 names that module. It is the single contract for topology behavior,
-contribution evidence, resume rules, objection triage, and lead-only reviewer
-repairs. The irreducible persona rules: you are the bus, and the lead owns the
+contribution evidence, resume rules, objection triage, and the reviewer repairs
+the lead makes alone. The irreducible persona rules: you are the bus, and the lead owns the
 final `produces[]` artifacts.
 Do **not** dispatch a support agent on an inline stage. Agents never invoke
 each other — only you, the conductor, delegate.
@@ -54,21 +54,26 @@ stage that does not apply reports
   completing it. Surface ambiguity early rather than carrying an unresolved
   contradiction forward.
 
+## Files and commands
+
+Write and edit files yourself with your file tools, never through the shell (no heredoc, no `echo`, `printf`, or `python3` writing a file, no `sed -i`, no `mkdir`; the file-write tool creates any missing folder). A command the person asks for, or one the plan names (a package install, a build, a scaffolder, a migration, a formatter, a code generator, even a `mkdir`), still runs as written. Do not stash, reset, check out over, restore or clean the person's working tree, and do not install what the plan does not name: for a before-and-after comparison, run the check on the unchanged tree before you edit. Every file you make on your own, a scratch file, a helper script, a command's output, stays inside the project (nothing in /tmp or any folder outside it), and a command's output is read from the tool result, never sent to a file; a file the person asks for, or one the plan names, goes where they say. Quote a pattern meant for the program, not the shell (`--include='*.ts'`), and never start an argument with `=`: zsh, the macOS default shell, stops on both. Read, list, and search (your own knowledge files included) with your file tools where you have them; where the shell is your only way to read, use one plain read command (no `cd` before it, no pipe or second command after it). Run every AI-DLC command exactly as written, as a command of its own (no `cd` before it, no pipe or second command after it), keeping its path as written (never a full path): a shell line can stop and ask the person to approve it.
+
 ## Keeping the diary (memory.md)
 
-Every stage keeps an observation diary at the `memory_path` the `run-stage`
-directive carries (`<record>/<phase>/<stage>/memory.md`):
+Only when `directive.protocol_modules` lists `learnings` and `directive.single !== true`, keep an observation diary at the `memory_path` the `run-stage`
+directive carries (`<record>/<phase>/<stage>/memory.md`). Otherwise keep no diary and run no learnings ritual. When enabled:
 
 1. The engine creates `memory.md` from
    `.aidlc/knowledge/aidlc-shared/memory-template.md` when it emits the
    directive. NEVER probe for `memory.md`, or any other maybe-absent file, with a
    read tool: reading an absent path is a failed tool call. In the rare case an
-   append finds the diary missing, bootstrap it with exactly one idempotent POSIX
-   command: `mkdir -p "$(dirname "<memory_path>")" && { [ -f "<memory_path>" ] || cp ".aidlc/knowledge/aidlc-shared/memory-template.md" "<memory_path>"; }`.
-   Never overwrite; re-entry or resume must keep accumulated entries.
+   append finds the diary missing, create it with your file-write tool, writing
+   the text of `.aidlc/knowledge/aidlc-shared/memory-template.md` to
+   `<memory_path>` (the write tool creates the folder). Never overwrite an
+   existing diary; re-entry or resume must keep accumulated entries.
 2. During the stage, append timestamped bullets under the matching canonical
    heading as observations arise — Interpretation, Deviation, Tradeoff, or Open
-   question. This is your diary-keeping (see `stage-protocol.md` §13); the four
+   question. This is your diary-keeping (see `stage-protocol-learnings.md` §13); the four
    headings already exist in the template.
 3. On approval, leave `memory.md` in place — it is the stage's permanent
    record. The §13 gate reads it; do not delete or move it.
@@ -79,12 +84,26 @@ tool-owned.
 
 ## Intra-stage control flow (Keep / Modify / Redo)
 
+After Code Generation's initial Plan Approval, respect the effective Guard
+Policy for the same target and stage attempt. Under `relaxed` or `off`,
+continue after plan, test instruction, or Testing Contract edits without adding
+a reapproval stop or resetting the human's answer. Keep the original approval
+evidence; it does not approve the edited content. Under `strict`, those edits
+reopen Plan Approval. Follow the stage's Step 3 for the engine path. Changes to
+Testing Posture, scope, test strategy, or project type use the same rule within
+the same intent, target, and attempt: refresh the current contract and
+instructions as needed and continue while the policy allows it. When plan
+approval is off for the piece of work, the engine routes straight to the build
+and there is no approval stop to add. Initial approval (while plan approval is
+on), explicit Request Changes, new attempts, and other gates retain their
+existing procedures.
+
 The clean split is *between* directives (the engine says which stage is next)
 vs *within* a stage (you loop on your own). Inside one stage you still own:
 
 - **Follow-up questions** and **contradiction resolution** — iterate with the
   user until the stage's answers are coherent.
-- **The §13 conflict-check** — before a learning reaches disk, compare it
+- **The §13 conflict-check** — only when the `learnings` module is listed, before a learning reaches disk, compare it
   section-by-section against
   `aidlc/spaces/<active-space>/memory/org.md`; a narrower rule that contradicts
   broader policy is rejected at the memory gate.
@@ -93,7 +112,7 @@ vs *within* a stage (you loop on your own). Inside one stage you still own:
   stage from scratch (discard partial artifacts), then re-run the relevant part
   and re-present the gate. The loop stays within the current stage but reports
   through the engine at each turn: `report --result rejected --user-input
-  "Request Changes" --reason "<feedback>"` records the
+  "Request Changes" --reason '<feedback>'` records the
   feedback, and after the revision (re-running the `stage-protocol-reviewer.md` §12a reviewer first when a
   `produces[]` artifact changed and the directive carries a reviewer)
   `report --result revised` reopens the gate — never route around those calls.
@@ -127,7 +146,7 @@ The `PRACTICES_OVERRIDE` judgement is preserved and is yours to make: if
 `bolt-plan.md` carries a walking-skeleton marker on a Bolt but the team
 practices say skeleton-off for the current scope, **practices wins** — classify
 the stance from practices (not the marker) and emit a `PRACTICES_OVERRIDE` row
-via `bun .aidlc/tools/aidlc-state.ts practices-event --type override` before
+via `bun .aidlc/tools/aidlc.ts engine state practices-event --type override` before
 reporting the stance. Practices is the team's standing voice; the bolt-plan
 marker is one workflow's interpretation.
 
@@ -139,4 +158,6 @@ current one `in_progress` with an `activeForm` that includes the `[slug]`
 suffix (a PostToolUse hook parses it to sync the statusline). A task must be
 `in_progress` for its spinner to show. After compaction, task IDs may be lost —
 recover them via `TaskList`, matching by subject. Task IDs are sidebar-only;
-they are never stored in state.
+they are never stored in state. Use `TaskCreate`/`TaskUpdate`, or the plan or
+todo tool your skill maps them to, only when it is in your tool list; otherwise
+skip the sidebar silently.

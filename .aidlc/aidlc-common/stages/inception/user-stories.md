@@ -52,9 +52,10 @@ outputs: stories.md, personas.md, user-stories-assessment.md, traceability.json 
 
 ### Step 1: Load the Lead Persona (mob stage)
 
-Read every path in `directive.inline_context_paths` per the stage protocol. For
-this mob the roster contains the aidlc-product-agent persona and its shared/role
-knowledge only; the product manager owns the inline draft and integration work.
+The step carries the aidlc-product-agent persona (`directive.lead_persona`); work
+this stage as that agent. Read every path in `directive.inline_context_paths` per
+the stage protocol: for this mob it holds the product agent's shared and role
+knowledge only. The product manager owns the inline draft and integration work.
 
 This stage runs `mode: mob` (stage-protocol-ensemble.md §5 "Multi-agent stages"): the support agents (aidlc-design-agent for user experience, aidlc-developer-agent for implementability, aidlc-quality-agent for testability) are NOT voices to adopt — they are dispatched as independent participants during PART 2. Do not load their personas into your own context.
 
@@ -72,7 +73,7 @@ Create `<record>/inception/user-stories/user-stories-assessment.md` documenting 
 - If skipping: what alternative coverage exists (e.g., requirements alone are sufficient)
 
 If skipping, run
-`bun .aidlc/tools/aidlc-orchestrate.ts report --stage user-stories --result skipped --reason "<reason>"`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage user-stories --result skipped --reason "<reason>"`.
 The engine records the skip and advances to the next in-scope stage.
 
 ### Step 3: Load Prior Context
@@ -134,29 +135,40 @@ participants, and the Product Leader reviews afterwards (`stage-protocol-reviewe
 - Story dependencies and relationships
 - INVEST compliance notes
 
-**Round 1 — dispatch the mob.** Per stage-protocol-ensemble.md §5 `mode: mob`,
-dispatch all three support agents in parallel against the draft (artifacts
-by path: the two draft artifacts, the Q&A file, requirements.md; rules as the
-accumulated steering bundle), mutually blind. Each WRITES its contribution file at
+**Round 1 — dispatch the mob.** Per stage-protocol-collaborators.md `mode: mob`,
+dispatch exactly the collaborators the directive lists in `support_agents`, in
+parallel against the draft (artifacts by path: the two draft artifacts, the Q&A
+file, requirements.md; rules per `stage-protocol.md` § "For subagent stages" step 2),
+mutually blind. Each WRITES its contribution file at
 `<record>/inception/user-stories/contributions/<agent-slug>.md` (§11 format:
 identity-marker first line, Contribution, Positions): design on UX and
 persona fidelity, developer on implementability and story sizing, quality on
 testability of the acceptance criteria.
 
+**If `directive.support_agents` is empty, skip Round 1 and the triage below** —
+the collaborators switch is off for this scope, so the lead works alone
+(§5): your draft stands as the user stories, with no mob round to dispatch,
+integrate, or triage, and no contribution files.
+
 **Integrate and triage.** As the lead, fold the contributions into the two
-artifacts, then triage unresolved objections per stage-protocol-ensemble.md §5: a judgment call (both
+artifacts, then triage unresolved objections per stage-protocol-collaborators.md: a judgment call (both
 positions legitimate) goes to the user NOW as a structured question (add it
 to the questions file first, blank `[Answer]:` tag); a knowledge dispute
 goes to **round 2** — re-dispatch only the objecting agent(s) with the
 revised draft and the other participants' positions (they update their own
 contribution files). Maintained dissent is quoted verbatim in the Step 10
-completion summary. The three contribution files are this stage's ensemble
-evidence — the engine refuses approval while any is missing.
+completion summary. The dispatched collaborators' contribution files are this
+stage's ensemble evidence — the engine refuses approval while any in the
+directive's effective `support_agents` is missing. A lead working alone has none.
 
 **Write element-level traceability.** Create
-`<record>/inception/user-stories/traceability.json`. Enumerate every `FR` and
-`NFR` ID from `requirements.md` in `upstream_ids`, with one `coverage` row per
-ID. `OK` targets must name one or more existing `USx.y` IDs. Use `Deferred`
+`<record>/inception/user-stories/traceability.json` by running
+`bun .aidlc/tools/aidlc.ts engine sensor-traceability --stage user-stories --output-path <that path> --write-upstream`:
+it lists every `FR` and `NFR` ID Requirements Analysis recorded in
+`upstream_ids`, each with a `GAP` row (a requirement with sub-requirements is
+traced through its `FR{n}.{m}` IDs and needs no row of its own). Set each
+row's `status` and `target`: `OK` targets must name one or more existing
+`USx.y` IDs. Use `Deferred`
 only with a named downstream stage and `N/A` only with a justification:
 
 ```json
@@ -173,10 +185,11 @@ only with a named downstream stage and `N/A` only with a justification:
 
 ### Step 9: Open the Approval Gate
 
-After verifying the three lead artifacts and all three contribution files, run:
+After verifying the three lead artifacts and every dispatched collaborator's
+contribution file (none when the lead works alone), run:
 
 ```bash
-bun .aidlc/tools/aidlc-orchestrate.ts report \
+bun .aidlc/tools/aidlc.ts engine orchestrate report \
   --stage user-stories --result awaiting-approval
 ```
 
@@ -188,12 +201,12 @@ evidence before presenting the human gate.
 Use stage-protocol.md completion template with completion emoji: :books:
 - Summary of personas and stories produced
 - Review path: `<record>/inception/user-stories/`
-- Structured approval question with options: Approve / Request Changes. On the Approve option's description write `Continue to <next stage name>`, taking that name from the run-stage directive's `next_stage` field (`Complete workflow` when it is null) - the user sees the real stage name, never a field name.
+- Structured approval question with options: Approve / Request Changes. On the Approve option's description write `Continue to <next stage name>`, taking that name from the `next_stage` field of the reply that opened the gate, else the run-stage directive's (`Complete workflow` when it is null) - the user sees the real stage name, never a field name.
 
-STOP for the human response. Report **Approve** with
-`--result approved --user-input "<exact choice>"`; report
-**Request Changes** with `--result rejected --user-input "Request Changes"
---reason "<feedback>"`, run the
+STOP for the human response, then read it. Report **Approve** with
+`--result approved --user-input "Approve"`; report
+**Request Changes** with `--result rejected --user-input "Request Changes"`
+(their words are kept with the record; add `--reason` only to say more), run the
 revision loop, and report `--result revised` before re-presenting. The engine
 owns every lifecycle transition and advancement.
 
@@ -210,9 +223,8 @@ declared and covered, and checks that each `OK` target exists in `stories.md`.
 
 ## Learn
 
-Follow stage-protocol.md §13: maintain `<record>/<phase>/<stage>/memory.md`
-under the four standard headings while working; before the approval gate,
-surface candidates with `aidlc-learnings.ts`;
-still ask the mandatory "Anything to add for next time?" question, and persist confirmed selections
-with the tool. The memory file stays in the artefact directory, and the stage
-file remains immutable.
+When `directive.protocol_modules` lists `learnings`, follow
+`stage-protocol-learnings.md`: keep the diary at `directive.memory_path` while
+working, and take the learnings step before the approval gate; that module says
+when it asks the person anything. When the module is absent, skip both the diary
+and the step.

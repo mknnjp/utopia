@@ -29,6 +29,11 @@ Structure tests in this ratio (approximate):
 - Execute in minutes; run before release
 - Target: critical business workflows only (login, core CRUD, payment)
 - Maximum 20-30 e2e tests; more indicates missing integration coverage
+- A browser workflow is end to end only when it runs in a real browser engine
+  (for example Chromium through Playwright). A journey in Node or a DOM
+  emulator (jsdom, Happy DOM) is an integration test, however much of the app
+  it assembles: it misses native browser behavior, such as `fetch` failing
+  when called without its `window` receiver
 
 ## Test Types Beyond the Pyramid
 
@@ -105,6 +110,40 @@ Cleanup: [teardown required]
 - Accessibility automated checks pass
 - No open P0/P1 defects
 - Stakeholder acceptance sign-off obtained
+
+## Coverage-Ignore Pragmas
+
+Coverage-ignore pragmas exclude code from coverage measurement. Their syntax
+depends on the coverage provider; an unrecognized pragma may leave the code
+included in the report. Apply exclusions only when justified and permitted by
+the project's policy and current Testing Contract.
+
+1. **Test reachable behavior; remove only proven dead code.** Defensive checks
+   that can execute need tests. Remove or restructure unreachable code only
+   when doing so preserves required behavior, validation, and error handling.
+2. **Use the project's actual provider.** If an unreachable defensive branch
+   must remain and an exclusion is permitted, determine the coverage provider
+   from the effective test configuration and dependencies. Use the syntax
+   documented for that provider and installed version, and record why the
+   exclusion is justified.
+3. **Do not guess or weaken targets.** If the provider or supported syntax
+   cannot be determined, leave the code unannotated and surface the uncertainty
+   for resolution. Preserve the Testing Contract, coverage scope, and thresholds.
+4. **Verify when introducing or changing an exclusion.** Run the configured
+   coverage command through the project's actual build and test pipeline as
+   part of the current work, then inspect the freshly generated report. Confirm
+   that each justified pragma excludes the intended code; matching the documented
+   syntax alone does not establish that the pipeline honored it. This obligation
+   does not depend on Build and Test being scheduled. When that stage is present,
+   its coverage verification checks the exclusions again.
+5. **Record evidence and unresolved gaps.** Include the provider, command,
+   report location, and exclusion rationale in the test results. If a pragma
+   has no effect, investigate the provider configuration and build transforms,
+   then correct the mismatch or safely restructure the unreachable code.
+   If the coverage command cannot run, record the exclusion's effect as
+   unverified; do not assume a later stage will verify it. Report unmet or
+   unverified applicable coverage targets through the existing failure handling.
+   Never lower thresholds or broaden exclusions just to make a gate pass.
 
 ## Test Data Strategy
 

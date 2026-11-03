@@ -1,5 +1,6 @@
 ---
 slug: nfr-requirements
+name: NFR Requirements
 phase: construction
 execution: CONDITIONAL
 condition: Performance, security, scalability, reliability, or observability requirements needed, or tech stack selection needed. Skip if no NFR requirements and tech stack already determined.
@@ -122,9 +123,12 @@ sub-number, such as `NFR4.1` and `NFR4.2`. Carry these IDs on every requirement
 row.
 
 Create
-`<record>/construction/{unit-name}/nfr-requirements/traceability.json`.
-Enumerate every inception `NFR{n}` applicable to this Unit and target the
-derived `NFRx.y` IDs. `N/A` requires a justification:
+`<record>/construction/{unit-name}/nfr-requirements/traceability.json` by running
+`bun .aidlc/tools/aidlc.ts engine sensor-traceability --stage nfr-requirements --output-path <that path> --write-upstream`:
+it lists every inception `NFR{n}` Requirements Analysis recorded, or, when User Stories
+did not run and `unit-of-work-story-map.md` gives this Unit NFR rows, the NFRs
+on those rows, each with a `GAP` row. Target the derived `NFRx.y` IDs; one that does not apply to this
+Unit is `N/A` in `coverage`, with the reason as its target:
 
 ```json
 {
@@ -141,7 +145,7 @@ derived `NFRx.y` IDs. `N/A` requires a justification:
 ### Step 6: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .aidlc/tools/aidlc-orchestrate.ts report --stage nfr-requirements --result <outcome>`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage nfr-requirements --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 ### Step 7: Completion
@@ -174,9 +178,8 @@ per-Unit `NFRx.y` requirements.
 
 ## Learn
 
-Follow stage-protocol.md §13: maintain `<record>/<phase>/<stage>/memory.md`
-under the four standard headings while working; before the approval gate,
-surface candidates with `aidlc-learnings.ts`;
-still ask the mandatory "Anything to add for next time?" question, and persist confirmed selections
-with the tool. The memory file stays in the artefact directory, and the stage
-file remains immutable.
+When `directive.protocol_modules` lists `learnings`, follow
+`stage-protocol-learnings.md`: keep the diary at `directive.memory_path` while
+working, and take the learnings step before the approval gate; that module says
+when it asks the person anything. When the module is absent, skip both the diary
+and the step.

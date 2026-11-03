@@ -6,7 +6,7 @@ YAML parser (`parseStageFrontmatter` in `lib.ts`), and the YAML stage
 files all implement against this document.
 
 YAML frontmatter at the top of every stage `.md` is authoritative. The
-build step `bun aidlc-graph.ts compile` regenerates
+build step `bun .aidlc/tools/aidlc.ts engine graph compile` regenerates
 `.aidlc/tools/data/stage-graph.json` from the YAML sources; the runtime
 reads the compiled JSON via the unchanged `loadStageGraph()` API at
 `lib.ts:282-289`. The CI drift check `aidlc-graph compile --check` fails
@@ -30,54 +30,58 @@ the build if the JSON diverges from the YAML.
 # compact Imports/Upstream-targets summary; stage-specific exceptions stay local
 
 ## Learn
-# compact pointer to stage-protocol.md section 13; bootstrap stages keep the no-gate exception
+# conditional pointer to stage-protocol-learnings.md; absent module means no diary or ritual
 ```
 
 ---
 
 ## Authored fields
 
-Top-level authored fields (plus three `consumes[]` subfields).
+Top-level authored fields (plus four `consumes[]` subfields).
 All required unless marked optional. The schema in `stage-schema.ts`
 copies this table verbatim.
 
 | Field | Type | Required | Enum / Constraint |
 |-------|------|----------|--------------------|
 | `slug` | string | yes | kebab-case; must match filename stem |
+| `name` | string | optional | user-facing display-name override. Omit when title-casing the slug is correct; use for acronyms, conjunctions, or established punctuation |
 | `phase` | string | yes | `initialization` \| `ideation` \| `inception` \| `construction` \| `operation` (lowercase) |
 | `execution` | string | yes | `ALWAYS` \| `CONDITIONAL` |
 | `condition` | string | yes | free-form; describe always-on rationale for `ALWAYS`, branching condition for `CONDITIONAL` |
 | `lead_agent` | string | yes | agent slug; validated dynamically against `.aidlc/agents/*.md` via `loadAgents()` — no hardcoded enum |
 | `support_agents` | string[] | yes | empty list allowed; each entry a valid agent slug. For `mode: pipeline`, every entry across `lead_agent` plus `support_agents` must be unique so each ordered receipt position has one identity. Renamed from prose `Supporting Agents:` (format-only rename) |
-| `mode` | string | yes | `inline` \| `subagent` \| `pipeline` \| `mob` \| `agent-team`. The stage's **communication topology** — who talks to whom while the body runs. `inline` (conductor adopts every voice, zero dispatches), `subagent` (hub-and-spoke: the conductor dispatches the lead for the draft, then each `support_agents[]` entry as a real, mutually-blind spoke, then the lead to integrate), `pipeline` (chain: the links collectively author the artifacts, each link seeing all upstream work and advancing the work product directly; after every return the conductor mints `PIPELINE_LINK_COMPLETED`, and the final link leaves the artifacts complete), and `mob` (mesh: one room, cross-talk, dissent recorded; judgment-call objections surface to the human mid-stage) are active; `pipeline`/`mob` require non-empty `support_agents`. Writing model: each dispatched support agent writes its own contribution file (`contributions/<agent-slug>.md`, stage-protocol-ensemble.md §11); the lead alone edits the stage's `produces[]` artifacts except that serialized pipeline links advance them directly. On `mob`/`subagent`-with-supports stages contribution files are completion evidence; on `pipeline`, the complete ordered current-attempt receipt chain is completion evidence. **`agent-team` is reserved** — the future native-bus transport for mesh collaboration (`mob` is the portable mode); no stage declares it until a consumer ships. Orchestrator code reading `mode` MUST handle `agent-team` explicitly (at minimum throw "not yet implemented") — do not fall through to a default path. The review loop is NOT a mode: `reviewer` + `reviewer_max_iterations` deliver the two-party critique topology on every mode (stage-protocol-reviewer.md §12a) |
+| `mode` | string | yes | `inline` \| `subagent` \| `pipeline` \| `mob` \| `agent-team`. The stage's **communication topology**: who talks to whom while the body runs. `inline` (conductor adopts every voice, zero dispatches), `subagent` (hub-and-spoke: the conductor dispatches the lead for the draft, then each `support_agents[]` entry as a real, mutually-blind spoke, then the lead to integrate), `pipeline` (chain: the links collectively author the artifacts, each link seeing all upstream work and advancing the work product directly; after every return the conductor mints `PIPELINE_LINK_COMPLETED`, and the last link leaves the artifacts complete), and `mob` (mesh: one room, cross-talk, dissent recorded; judgment-call objections surface to the human mid-stage) are active; `pipeline`/`mob` require non-empty `support_agents`. Writing model: each dispatched support agent writes its own contribution file (`contributions/<agent-slug>.md`, stage-protocol-collaborators.md); the lead alone edits the stage's `produces[]` artifacts except that serialized pipeline links advance them directly. On `mob`/`subagent`-with-supports stages contribution files are completion evidence; on `pipeline`, the complete ordered current-attempt receipt chain is completion evidence. **`agent-team` is reserved**: the future native-bus transport for mesh collaboration (`mob` is the portable mode); no stage declares it until a consumer ships. Orchestrator code reading `mode` MUST handle `agent-team` explicitly (at minimum throw "not yet implemented"); do not fall through to a default path. The review loop is NOT a mode: `reviewer` + `reviewer_max_iterations` deliver the two-party critique topology on every mode (stage-protocol-reviewer.md §12a) |
 | `reviewer` | string | optional | agent slug; invoked after artifact production and before the approval gate |
-| `review_artifact` | string | optional | Required whenever `reviewer` is present. Names one required Markdown entry from `produces[]`; that exact artifact owns the appended `## Review` section. For per-unit stages it must remain applicable for every Unit kind on which any required output is applicable. Plugin contributions may add outputs but cannot change this scalar owner implicitly. |
+| `review_artifact` | string | optional | Required whenever `reviewer` is present. Names one required Markdown entry from `produces[]`: the artifact the review is about. The review record is keyed to it, the gate names it as the `**Review:**` path, and `--reject-finding` / `--reopen-finding` / `--fix-finding <artifact>#R-NN` address its findings; the reviewer never writes to it (a legacy `## Review` section inside it is read for migration only). For per-unit stages it must remain applicable for every Unit kind on which any required output is applicable. Plugin contributions may add outputs but cannot change this scalar owner implicitly. |
 | `reviewer_max_iterations` | integer | optional | positive integer; requires `reviewer`; defaults to `2` |
-| `review_class` | string | optional | `adversarial` \| `advisory`; requires `reviewer`; defaults to `adversarial`. `advisory` is one normal-flow pass with findings quoted verbatim at the human gate; a terminal receipt invalidated by a later output write gets one bounded recovery request at the next ordinal. `none` is not a stage value; scope `review_cap` and per-run `--review` may only lower the effective class |
-| `summary_confirmation` | string | optional | `required` \| `if-present`. Marks stages using the consolidated answer review before artifact generation. `required` requires a questions file, exact `Looks correct` answer, human-backed receipt, unchanged questions-file digest, and native artifact writes after that receipt. `if-present` applies the same checks only when a conditional question flow created a questions file |
+| `review_class` | string | optional | `adversarial` \| `advisory`; requires `reviewer`; defaults to `adversarial`. `advisory` is one normal-flow pass whose findings the human gate shows from the engine-owned findings list; a terminal receipt invalidated by a later output write gets one bounded recovery request at the next ordinal. `none` is not a stage value; scope `review_cap` and per-run `--review` may only lower the effective class |
+| `summary_confirmation` | string | optional | `required` \| `if-present`. Marks stages using the consolidated answer review before artifact generation when `directive.ceremony.summary_confirmation` is `on`; `off` skips this checkpoint and receipt, not other required human decisions. `required` requires a questions file, exact `Looks correct` answer, human-backed receipt, unchanged questions-file digest, and native artifact writes after that receipt. `if-present` applies the same checks only when a conditional question flow created a questions file |
 | `for_each` | string | optional | artifact slug; stage runs once per instance of that artifact. Omit for once-per-workflow stages. Doctor validates the artifact is produced by an upstream stage |
-| `workspace_requires` | boolean | optional | Default `false`. `true` marks a stage that must write source code to the workspace root, not just planning docs under the per-intent record dir. The stage-completion artifact guard (`aidlc-state.ts` approve/advance/finalize/complete-workflow) then requires a file outside the `aidlc/` workspace tree and the harness dir before the stage can complete: a stage that wrote only its `produces[]` markdown but no code is refused. The flag also binds terminal reviews to the workspace source state (#629). On per-unit stages each terminal receipt additionally requires an engine-validated `source-manifest.json`, binds that unit's claimed paths, and completion compares the fresh claims against the stage-entry source baseline so unclaimed application-source changes fail closed (#662). Today only `code-generation` declares it |
+| `workspace_requires` | boolean | optional | Default `false`. `true` marks a stage that must write source code to the workspace root, not just planning docs under the per-intent record dir. The stage-completion artifact guard (`aidlc-state.ts` approve/advance/finalize/complete-workflow) then requires a file outside the `aidlc/` workspace tree and the harness dir, in the workspace or in one of the intent's recorded repos, before the stage can complete: a stage that wrote only its `produces[]` markdown but no code is refused. The flag also binds terminal reviews to the workspace source state (#629). On per-unit stages each terminal receipt additionally requires an engine-validated `source-manifest.json`, binds that unit's claimed paths, and completion compares the fresh claims against the stage-entry source baseline so unclaimed application-source changes fail closed (#662). The agent's writes to project files while a declaring stage is the step are never named by the line an approval says about files changed before Code Generation. Today only `code-generation` declares it |
 | `produces` | string[] | yes | empty allowed; lowercase-kebab artifact names — see [Artifact Vocabulary](../../../../docs/reference/16-artifact-vocabulary.md) for rules and the live registry tool |
-| `consumes` | object[] | yes | empty allowed; each entry `{artifact, required, conditional_on?}` |
+| `consumes` | object[] | yes | empty allowed; each entry `{artifact, required, conditional_on?, cited?}` |
 | `consumes[].artifact` | string | yes per entry | lowercase-kebab |
 | `consumes[].required` | boolean | yes per entry | Scoped to the active plan. `true` means "if the producing stage runs, this consume must be satisfied" — not a global assertion that the artifact always exists. Scopes that skip the producer (e.g., `bugfix` skipping `units-generation`) make the consume moot; the stage body handles graceful degradation. The reserved `when:` primitive will eventually let authors express richer predicates |
 | `consumes[].conditional_on` | string | optional | `brownfield` \| `greenfield`. Omit for unconditional consumes — no `always` value |
+| `consumes[].cited` | boolean | optional | `true`: the deliverables cite this input whenever it exists, and the `upstream-coverage` check reads it beside the required consumes. The compile lists these consumes as the stage's `cites`, outside the compiled `consumes`, so marking one changes no finished stage's record |
 | `requires_stage` | string[] | yes | empty allowed; each entry a known stage slug. Two roles: (1) semantic data dependency; (2) presentation-order edge for stages with no semantic link but a fixed display order. Primary input to computed `display_order` |
 | `scopes` | string[] | optional | each entry a scope name with a matching `.aidlc/scopes/aidlc-<name>.md` file. Naming a scope marks this stage EXECUTE under that scope; absence marks it SKIP. The per-stage transpose of the scope membership matrix — `aidlc-graph compile` reads every stage's `scopes:` and emits the compiled EXECUTE/SKIP grid (`tools/data/scope-grid.json`). The 3 initialization stages name all scopes (always EXECUTE). Absent and `[]` are treated identically |
+| `ars` | object | optional | Composer screening prior for a stage the shipped `tools/data/ars-priors.json` does not name (plugin stages): `targets` (list of ARS component symbols `iae` \| `csu` \| `ve` \| `r` \| `ua`; empty allowed), `cost` (integer `1`..`5`, or `null` for a stage that is never numerically screened), optional `role` (`initialization` \| `core` \| `phase-gate` \| `structural`) and optional `project_types` (non-empty subset of `brownfield` \| `greenfield`, mirroring a `condition:` that restricts the stage to one kind of project) — the same four facts as one priors-file entry. Compiled into the stage node verbatim; `aidlc-graph ars` reads it when the priors file has no entry for the slug (the file wins when both exist). A stage with neither lands as a `no-prior` row — not screenable |
 | `inputs` | string | yes | human prose (preserves today's `**Inputs**:` line) |
 | `outputs` | string | yes | human prose (preserves today's `**Outputs**:` line). **Non-load-bearing at runtime** — the engine NEVER reads `outputs:` for path resolution; it resolves the node's `produces[]` artifact NAMES against the **active intent's record dir** at emit time (see "Artifact paths are engine-resolved" below). Author `outputs:` as relative artifact NAMES (or `<phase>/<stage>/<name>.md` shapes); do NOT hardcode a workspace root (`aidlc-docs/…` or `aidlc/spaces/…`) — it would read FALSE the moment the record re-roots per intent |
 
 ---
 
-## Computed fields (NOT authored)
+## Computed fields
 
-Two fields appear in `stage-graph.json` but are derived by the compile step,
-not authored in YAML.
+Numeric display order is derived by the compile step, not authored in YAML.
 
 | Field | Derivation |
 |-------|------------|
 | `display_order` | `<phase-prefix>.<sequence>`. Phase prefix: `initialization=0`, `ideation=1`, `inception=2`, `construction=3`, `operation=4`. Sequence: topological sort of `requires_stage` edges filtered to this phase, slug-alphabetical tiebreak for parallel stages |
-| `name` | Title-case of the slug (hyphens → spaces), or the H1 heading of the stage file |
+
+`name` defaults to title-casing the slug. Author an explicit `name:` only when
+that default would lose an acronym, conjunction, or established display label.
 
 ---
 
@@ -203,9 +207,10 @@ future contributor additions from colliding with planned primitives.
 | `blocks_on` | Completion dependency without data read. Splits today's overloaded `requires_stage` (which conflates "I consume your output" with "I run after you") |
 | `timeout`, `retry` | Execution budgets. Homed in sensor bindings and loop config, not stage frontmatter (mirrors Claude Code's task-API design — no primitive-level retry/timeout) |
 
-Precedent for the reserved-namespace pattern:
-`docs/reference/06-hooks-and-tools.md` declares audit event names
-`ERROR_LOGGED` and `RECOVERY_COMPLETED` the same way.
+Precedent for the reserved-namespace pattern: the audit taxonomy in
+`docs/reference/06-hooks-and-tools.md` declares event names centrally before
+their owning tool or hook consumes them; `ERROR_LOGGED` and
+`RECOVERY_COMPLETED` are current owned examples.
 
 **Consumer contract for `mode`:** orchestrator code reading the `mode` field
 must handle `agent-team` explicitly. At minimum, throw "mode agent-team not

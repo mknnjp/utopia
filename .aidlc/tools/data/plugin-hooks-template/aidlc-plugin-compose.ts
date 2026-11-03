@@ -73,20 +73,43 @@ const env = {
   PLUGIN_ROOT: pluginRoot,
 };
 const aidlc = Bun.which("aidlc");
+let installedSyncSucceeded = false;
 
 if (aidlc) {
-  const synced = spawnSync(aidlc, ["plugin", "sync"], {
+  const synced = spawnSync(aidlc, ["engine", "plugin", "sync"], {
     cwd: projectRoot,
     env,
-    stdio: "inherit",
+    encoding: "utf-8",
   });
-  if (synced.status === 0) process.exit(0);
+  if (synced.stdout) process.stdout.write(synced.stdout);
+  if (synced.stderr) process.stderr.write(synced.stderr);
+  installedSyncSucceeded = synced.status === 0;
 }
 
-const compose = join(pluginRoot, "hooks", "compose.ts");
-const fallback = spawnSync(process.execPath, [compose], {
-  cwd: projectRoot,
-  env,
-  stdio: "inherit",
-});
-process.exit(fallback.status ?? 1);
+// A copy-channel install has no aidlc but ships the engine's own sync tool:
+// run it with this Bun, as the other harnesses' hooks do, so the project keeps
+// the same composition record on either channel. Where it refuses (an older
+// project tool), the plugin's compose.ts below still composes, as before.
+const sharedTool = join(projectRoot, harnessDir, "tools", "aidlc-plugin.ts");
+if (!aidlc && existsSync(sharedTool)) {
+  const shared = spawnSync(process.execPath, [sharedTool, "sync"], {
+    cwd: projectRoot,
+    env,
+    encoding: "utf-8",
+  });
+  if (shared.stdout) process.stdout.write(shared.stdout);
+  if (shared.stderr) process.stderr.write(shared.stderr);
+  installedSyncSucceeded = shared.status === 0;
+}
+
+if (!installedSyncSucceeded) {
+  const compose = join(pluginRoot, "hooks", "compose.ts");
+  const fallback = spawnSync(process.execPath, [compose], {
+    cwd: projectRoot,
+    env,
+    encoding: "utf-8",
+  });
+  if (fallback.stdout) process.stdout.write(fallback.stdout);
+  if (fallback.stderr) process.stderr.write(fallback.stderr);
+  process.exitCode = fallback.status ?? 1;
+}

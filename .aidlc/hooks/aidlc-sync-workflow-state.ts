@@ -9,26 +9,66 @@
 //      the latest STAGE_STARTED slug from the audit tail instead. Payload-free.
 // In both cases the slug is reconciled into the state file via set-status.
 // Receives JSON on stdin from the adapter / Claude Code.
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
 import {
+  auditBlockField,
+  type AuditShardEvent,
+  gateStagesFromBlock,
+  hookStandsOutside,
+  enterHookWorkflow,
   type ClaudeCodeHookInput,
   getField,
   hookDebug,
   hooksHealthDir,
+  writeHookStatusFile,
   isClaudeCodeHookInput,
   isoTimestamp,
   latestStartedStageSlug,
+  maximalAttemptEvents,
   parseCheckboxes,
+  readActiveDirectiveMarker,
   readAllAuditShards,
+  readAuditShardEvents,
   readStateFile,
   resolveProjectDirFromHook,
   stateFilePath,
-  harnessDir,
 } from "../tools/aidlc-lib.ts";
+import { setStatus } from "../tools/aidlc-utility.ts";
+
+// Whether Current Stage `stage` is where a Unit reopen moved the work back to,
+// with no main-workflow STAGE_STARTED definitely after it. `aidlc-jump.ts
+// reopen` marks its GATE_REJECTED rows `Moved From` only when it moved Current
+// Stage back from a later stage, a move that writes no start of its own, so the
+// latest start still names the stage the work left. Rows two clones wrote in
+// the same second are unordered, and then the move holds.
+function unitReopenMovedTo(rows: readonly AuditShardEvent[], stage: string): boolean {
+  const moves = rows.filter((row) =>
+    (row.event === "STAGE_STARTED" && !auditBlockField(row.block, "Workflow")?.startsWith("single-stage:")) ||
+    (row.event === "GATE_REJECTED" && auditBlockField(row.block, "Reopen") !== null &&
+      (auditBlockField(row.block, "Moved From") ?? "") !== ""));
+  return maximalAttemptEvents(moves).some((row) =>
+    row.event === "GATE_REJECTED" && gateStagesFromBlock(row.block).includes(stage));
+}
 
 export async function run(input: string): Promise<number> {
-const projectDir = resolveProjectDirFromHook(import.meta.url);
+  const projectDir = resolveProjectDirFromHook(import.meta.url);
+  let payloadSession: unknown;
+  try {
+    payloadSession = (JSON.parse(input) as { session_id?: unknown }).session_id;
+  } catch {
+    // Missing/malformed payload: resolve without a payload session.
+  }
+  // A conversation that has not joined the selected workflow does not move its stage.
+  const workflow = enterHookWorkflow(projectDir, payloadSession);
+  try {
+    if (hookStandsOutside(workflow)) return 0;
+    return await syncStatus(input, projectDir);
+  } finally {
+    workflow.restore();
+  }
+}
+
+async function syncStatus(input: string, projectDir: string): Promise<number> {
 hookDebug(projectDir, "sync-workflow-state", "invoked");
 
 // Read JSON from stdin. Exit cleanly if stdin is a TTY — no Claude Code JSON
@@ -66,15 +106,22 @@ if (source === "ide-audit-sync") {
   const audit = readAllAuditShards(projectDir);
   const auditSlug = latestStartedStageSlug(audit);
   hookDebug(projectDir, "sync-workflow-state", "ide-audit-sync", { auditSlug, current, status });
+  // Nothing to do from this record's files: the Kiro IDE front gate skips the
+  // next shell command's call until one of them changes (the mark's name is
+  // aidlc-hook-front-gate.ts noopMarkName; the hook names it without importing).
+  const noop = (): number => {
+    writeHookStatusFile(hooksHealthDir(projectDir), "sync-workflow-state.noop", isoTimestamp());
+    return 0;
+  };
 
   // (a) Only sync a live, running workflow. A completed/parked workflow (Status
   //     != Running) or a cleared pointer (Current Stage none/empty) is ahead of
   //     the audit tail by design — never rewind it.
-  if (status !== "Running") return 0;
-  if (current === "" || current === "none") return 0;
+  if (status !== "Running") return noop();
+  if (current === "" || current === "none") return noop();
   // (b) No audit slug, or it already matches state → nothing to do.
-  if (!auditSlug) return 0;
-  if (current === auditSlug) return 0;
+  if (!auditSlug) return noop();
+  if (current === auditSlug) return noop();
   // (c) Never sync BACKWARD: if the audit slug is a stage the workflow has
   //     already completed or skipped, the state is legitimately ahead of it
   //     (the stage finished; a newer STAGE_STARTED just wasn't the last row).
@@ -86,7 +133,18 @@ if (source === "ide-audit-sync") {
       auditSlug,
       auditState: auditCb.state,
     });
-    return 0;
+    return noop();
+  }
+  // (d) Current Stage is where a Unit reopen moved the work back to, after
+  //     that start: the reopen writes no STAGE_STARTED of its own, so the last
+  //     start names the stage the work left. Syncing would put Current Stage
+  //     back on it while the Units redo their step.
+  if (unitReopenMovedTo(readAuditShardEvents(projectDir), current)) {
+    hookDebug(projectDir, "sync-workflow-state", "skip: a Unit reopen after the last start", {
+      auditSlug,
+      current,
+    });
+    return noop();
   }
   slug = auditSlug;
 } else {
@@ -97,25 +155,24 @@ if (source === "ide-audit-sync") {
   if (!activeForm) return 0;
   const slugMatch = activeForm.match(/\[([a-z][a-z0-9-]*)\]$/);
   if (!slugMatch) return 0;
+  // The step in hand belongs to an isolated `--single` run: its plan step names
+  // that run, not the workflow's place.
+  if (readActiveDirectiveMarker(projectDir, readStateFile(projectDir))?.single === true) return 0;
   slug = slugMatch[1];
 }
 
-// Health heartbeat
 const healthDir = hooksHealthDir(projectDir);
-mkdirSync(healthDir, { recursive: true });
-writeFileSync(join(healthDir, "sync-workflow-state.last"), isoTimestamp(), "utf-8");
+writeHookStatusFile(healthDir, "sync-workflow-state.last", isoTimestamp());
 
-// Update state file via set-status (call the utility tool directly)
-const toolPath = join(projectDir, harnessDir(), "tools", "aidlc-utility.ts");
+// Update state through the shared implementation; the hook owns this mutation.
 hookDebug(projectDir, "sync-workflow-state", "set-status", { slug });
-Bun.spawnSync(["bun", toolPath, "set-status", "--stage", slug, "--project-dir", projectDir], {
-  env: {
-    ...process.env,
-    AIDLC_STATUSLINE_OWNER: `statusline:${process.pid}`,
-  },
-  stdout: "ignore",
-  stderr: "ignore",
-});
+try {
+  setStatus(projectDir, { stage: slug });
+} catch (error) {
+  hookDebug(projectDir, "sync-workflow-state", "set-status failed", {
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
 return 0;
 }
 

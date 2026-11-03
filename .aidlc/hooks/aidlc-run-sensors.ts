@@ -10,57 +10,82 @@
 //
 // Coexists with `aidlc-write-audit-log.ts` under the same Write|Edit
 // matcher; recursion guard skips writes to the active record's
-// `.aidlc-sensors/` directory.
+// `.aidlc-engine/sensors/` directory.
 //
 // Exit-code contract (G5): always exit 0. Sensor verdicts surface
 // through the dispatcher's audit rows (SENSOR_FIRED + paired
-// SENSOR_PASSED|FAILED|BUDGET_OVERRIDE) and detail files. Blocking
-// semantics defer to the future ralph driver.
+// SENSOR_PASSED|FAILED|COULD_NOT_RUN|BUDGET_OVERRIDE) and detail files. Blocking
+// semantics belong to aidlc-state.ts enforceBlockingGateSensors.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { type GraphStage, loadGraph } from "../tools/aidlc-graph.ts";
+import { aidlcEngineCommand } from "../tools/aidlc-runtime-paths.ts";
+import { EXTENDED_SUBPROCESS_TIMEOUT_MS } from "../tools/aidlc-runtime-budget.ts";
 import {
+  hookStandsOutside,
+  enterHookWorkflow,
   auditFilePath,
   type ClaudeCodeHookInput,
   getField,
   hooksHealthDir,
+  writeHookStatusFile,
   isClaudeCodeHookInput,
   isoTimestamp,
+  LEGACY_SENSORS_DIR,
+  normalizeDriveLetter,
   readActiveDirectiveMarker,
   readStateFile,
   recordHookDrop,
+  resolveCeremony,
+  resolveProjectFlag,
   resolveProjectDirFromHook,
   sensorsDir,
+  sensorsReadDir,
   stateFilePath,
   harnessDir,
 } from "../tools/aidlc-lib.ts";
 
 export async function run(input: string): Promise<number> {
-// Step 1 — Resolve project dir from import.meta.url. Mirrors
-// aidlc-write-audit-log.ts and aidlc-rebuild-stage-graph.ts precedent.
-const projectDir = resolveProjectDirFromHook(import.meta.url);
+  // Step 1 — Resolve project dir from import.meta.url. Mirrors
+  // aidlc-write-audit-log.ts and aidlc-rebuild-stage-graph.ts precedent.
+  const projectDir = resolveProjectDirFromHook(import.meta.url);
+  let payloadSession: unknown;
+  try {
+    payloadSession = (JSON.parse(input) as { session_id?: unknown }).session_id;
+  } catch {
+    // Missing/malformed payload: resolve without a payload session.
+  }
+  // A write in a conversation that has not joined the selected workflow fires none of its sensors.
+  const workflow = enterHookWorkflow(projectDir, payloadSession);
+  try {
+    if (hookStandsOutside(workflow)) return 0;
+    return await fireSensors(input, projectDir);
+  } finally {
+    workflow.restore();
+  }
+}
 
-// Subprocess timeout. Defaults to 90s (covers tsc's 60s manifest cap +
-// dispatcher overhead). t95's timeout case overrides via env var to
-// avoid patching the production source tree. `Number(undefined) || N`
-// pattern handles unset / empty / unparseable equally.
+async function fireSensors(input: string, projectDir: string): Promise<number> {
+
+// Enclosing dispatcher backstop; explicit project/user limits still win,
+// including the deliberately short timeout-calibration fixtures.
 const SUBPROCESS_TIMEOUT_MS =
-  Number(process.env.AIDLC_SENSOR_TIMEOUT_MS) || 90_000;
+  Number(resolveProjectFlag("AIDLC_SENSOR_TIMEOUT_MS")) || EXTENDED_SUBPROCESS_TIMEOUT_MS;
 
-// Health-dir for the heartbeat (run-sensors.last). Read by the future
+// Health-dir for the heartbeat (run-sensors.last). Read by the
 // hook-health doctor.
 const healthDir = hooksHealthDir(projectDir);
 
 // Step 2 — TTY guard. Hook invoked outside a piped-stdin context (e.g.
 // interactive shell, test harness running under `bash -x`) has no JSON
-// to parse; exit cleanly instead of blocking on a terminal read.
+// payload to parse; exit cleanly.
 if (process.stdin.isTTY) return 0;
 
 // Step 3 — Stdin parse. Malformed JSON exits 0 silently.
 // We use the central ClaudeCodeHookInput type guard from aidlc-lib.ts;
-// the SKILL.md frontmatter pins this hook to the Write|Edit matcher,
+// the hook registration (Claude's settings.json) pins this hook to Write|Edit,
 // so we don't consult tool_name and only need tool_input.file_path.
 let parsed: ClaudeCodeHookInput;
 try {
@@ -79,32 +104,27 @@ const filePath = isAbsolute(rawFilePath)
   ? rawFilePath
   : join(projectDir, rawFilePath);
 
-// Step 5 — Recursion guard. Skip writes to the dispatcher's detail-file
-// directory. Post-workspace-move that dir re-roots per intent
-// (<record>/.aidlc-sensors/ via sensorsDir(projectDir, intent, space)); the
-// active-intent resolution is implicit in sensorsDir's bare projectDir call
-// (it resolves the active record root). Keep the flat `aidlc-docs/.aidlc-sensors/`
-// literal as the transitional flat-legacy fallback (retired in P9). Dispatcher
-// uses direct fs I/O so the loop isn't reachable today; defensive depth for
-// future LLM sensors that may emit findings via Write.
-const sensorsLeaf = sensorsDir(projectDir).replace(/\\/g, "/").replace(/\/$/, "");
-const filePathNorm = filePath.replace(/\\/g, "/");
+// Step 5 - Recursion guard. Cover output and the readable legacy findings
+// directory, including the older flat aidlc-docs location. Writers always use
+// sensorsDir; resolving a legacy read never creates or moves either directory.
+// Drive letters are normalized on both sides (see normalizeDriveLetter).
+const sensorsLeaves = [sensorsDir(projectDir), sensorsReadDir(projectDir)]
+  .map((path) => normalizeDriveLetter(path.replace(/\\/g, "/").replace(/\/$/, "")));
+const filePathNorm = normalizeDriveLetter(filePath.replace(/\\/g, "/"));
 if (
-  filePathNorm === sensorsLeaf ||
-  filePathNorm.startsWith(`${sensorsLeaf}/`) ||
-  filePath.includes("aidlc-docs/.aidlc-sensors/") ||
-  filePath.includes("aidlc-docs\\.aidlc-sensors\\")
+  sensorsLeaves.some((leaf) => filePathNorm === leaf || filePathNorm.startsWith(`${leaf}/`)) ||
+  filePathNorm.includes(`aidlc-docs/${LEGACY_SENSORS_DIR}/`)
 ) {
   return 0;
 }
 
 // Step 6 — Pre-init guard. No audit.md → no active workflow → no-op.
-// Mirrors aidlc-write-audit-log.ts:48-50 + aidlc-rebuild-stage-graph.ts:62-64.
+// Mirrors the no-audit exit in aidlc-write-audit-log.ts and aidlc-rebuild-stage-graph.ts.
 if (!existsSync(auditFilePath(projectDir))) return 0;
 
 // Step 7 — State-file guard.
 //
-// readStateFile throws on missing aidlc-state.md (lib.ts:169-175).
+// readStateFile throws on missing aidlc-state.md.
 // Pre-init or partially-deleted workspaces could have audit.md without
 // state.md (audit.md is write-direct; state.md is overwrite-rename).
 // G5 ("always exit 0") demands a guard before the read.
@@ -117,7 +137,12 @@ try {
   return 0;
 }
 
-// Step 8 — Heartbeat (G3). The future hook-health doctor reads this
+// Scope and intent policy disable automatic sensors without leaving health
+// markers or the first-fire banner. Explicit sensor fire remains available.
+const scope = getField(stateContent, "Scope");
+if (resolveCeremony("sensors", scope, stateContent).value === "off") return 0;
+
+// Step 8 - Heartbeat (G3). The hook-health doctor reads this
 // file's mtime to detect silent-hook failure. Placement: AFTER
 // input/recursion/audit/state guards but BEFORE the
 // active-stage and graph-read guards. Doctor must distinguish two
@@ -125,12 +150,7 @@ try {
 // with empty sensors_applicable like workspace-scaffold, (b) no
 // matches glob hit since last fire. See plan § Cross-milestone for the
 // canonical heuristic.
-mkdirSync(healthDir, { recursive: true });
-writeFileSync(
-  join(healthDir, "run-sensors.last"),
-  isoTimestamp(),
-  "utf-8"
-);
+writeHookStatusFile(healthDir, "run-sensors.last", isoTimestamp());
 
 // Step 8b — First-fire banner. On the first invocation against a
 // workspace (no .first-fired marker yet), print a one-line stderr
@@ -146,11 +166,8 @@ if (!existsSync(firstFiredMarker)) {
       "See the AI-DLC documentation to learn how rules and " +
       "the learning loop work.\n"
   );
-  try {
-    writeFileSync(firstFiredMarker, isoTimestamp(), "utf-8");
-  } catch {
-    // Marker write failure is non-fatal — banner may repeat next fire.
-  }
+  // Marker write failure is non-fatal: the banner may repeat next fire.
+  writeHookStatusFile(healthDir, ".first-fired", isoTimestamp());
 }
 
 // Step 9 — Active stage lookup (C3). The compile-resolved
@@ -160,7 +177,8 @@ if (!existsSync(firstFiredMarker)) {
 // or stale markers fall back to Current Stage.
 const currentStage = getField(stateContent, "Current Stage") ?? "";
 if (!currentStage || currentStage === "none") return 0;
-const markedStage = readActiveDirectiveMarker(projectDir, stateContent)?.stage;
+const marker = readActiveDirectiveMarker(projectDir, stateContent);
+const markedStage = marker?.stage;
 let activeStage = markedStage ?? currentStage;
 
 // Step 10 — Stage-graph read (C4). loadGraph() returns GraphStage[]
@@ -172,7 +190,7 @@ try {
   const graph = loadGraph();
   stageNode = graph.find((s) => s.slug === activeStage);
   // A schema-valid marker can still name a stage absent from a stale or
-  // plugin-filtered graph. Treat it as unusable and preserve the historical
+  // plugin-filtered graph. Treat it as unusable and preserve the
   // Current Stage behavior instead of suppressing all sensor dispatch.
   if (!stageNode && markedStage) {
     activeStage = currentStage;
@@ -184,6 +202,9 @@ try {
 }
 // Stage missing from graph (stale state-graph mismatch) — same exit.
 if (!stageNode) return 0;
+// The Unit the directive named, when its stage is the one dispatched: under
+// unit-major the rows say whose work the sensor looked at.
+const activeUnit = activeStage === markedStage ? marker?.unit : undefined;
 
 // No applicable sensors. Empty array is the workspace-scaffold case;
 // undefined is the unlikely missing-field case (compile guarantees it).
@@ -194,22 +215,22 @@ if (applicableSensors.length === 0) return 0;
 //
 // G1 lock-in: matches IS the filter. Entries without a matches glob
 // do not fire. The framework artifact glob is `**/{aidlc-docs,intents}/**`
-// (P9 — the per-intent record tree carries an `/intents/` segment; the legacy
+// (the per-intent record tree carries an `/intents/` segment; the legacy
 // `aidlc-docs/` arm stays so a pre-migration artifact still matches). The
-// relaxed `**/<seg>/**` form (vs `**/<seg>/**/*.md`) is load-bearing: the
-// upstream dispatcher's bespoke globToRegex rejects the *.md form even though
+// gate-fired document-shape manifests add a `codekb` arm for the space-level
+// CodeKB that reverse-engineering writes (#771). The relaxed `**/<seg>/**`
+// form (vs `**/<seg>/**/*.md`) is load-bearing: the upstream dispatcher's
+// bespoke globToRegex rejects the *.md form even though
 // Bun.Glob accepts both — both engines agree on the relaxed form.
 const sensorTs = join(projectDir, harnessDir(), "tools", "aidlc-sensor.ts");
 for (const entry of applicableSensors) {
-  // Gate-fired sensors run once per existing deliverable at gate-start. Older
-  // compiled graphs omit fire_on, which preserves the historical write default.
+  // Gate-fired sensors run at gate-start, not on writes. Older compiled graphs
+  // omit fire_on, which preserves the write default.
   if (entry.fire_on === "gate") continue;
   if (!entry.matches) continue;
   const glob = new Bun.Glob(entry.matches);
   if (!glob.match(filePath)) continue;
 
-  // Spawn dispatcher (C1). Bare-script form (`bun <script> ...`)
-  // matches the upstream dispatcher manifest's `command:` convention.
   // Sync subprocess; user pays wall-clock per Write inside an active
   // stage with applicable sensors.
   //
@@ -219,19 +240,23 @@ for (const entry of applicableSensors) {
   // --template-eligible (via templateEligibleArtifacts) and threads them to the
   // required-sections script. So both invocation sites (this hook and a direct
   // `aidlc-sensor fire`) converge on the dispatcher's single threading point and
-  // stay consistent; the hook passes only --stage/--output-path as before.
+  // stay consistent; the hook passes --stage/--output-path, plus --unit when the
+  // directive named a Unit.
   try {
-    const result = spawnSync(
-      "bun",
+    // A bare "bun" child does not exist in a native install, where the binary
+    // carries the runtime; the dispatcher helper names the compiled executable
+    // when there is one and Bun's own absolute path otherwise.
+    const [command, ...args] = aidlcEngineCommand(
+      "sensor",
       [
-        sensorTs,
-        "fire",
-        entry.id,
-        "--stage",
-        activeStage,
-        "--output-path",
-        filePath,
+        "fire", entry.id, "--stage", activeStage, "--output-path", filePath,
+        ...(activeUnit ? ["--unit", activeUnit] : []),
       ],
+      sensorTs,
+    );
+    const result = spawnSync(
+      command,
+      args,
       {
         cwd: projectDir,
         timeout: SUBPROCESS_TIMEOUT_MS,
@@ -240,13 +265,13 @@ for (const entry of applicableSensors) {
     );
     // Sensor outcomes stay inside the dispatcher (paired audit rows by
     // Fire id; dispatcher exits 0). Hook-level failures get recorded
-    // for `--doctor` to surface (mirrors aidlc-rebuild-stage-graph.ts:115-121):
+    // for `--doctor` to surface (mirrors aidlc-rebuild-stage-graph.ts's dispatch step):
     //   - timeout: spawnSync sets BOTH `result.error.code === "ETIMEDOUT"`
     //     and `result.signal === "SIGTERM"` on timeout. We OR-check
     //     defensively (either alone is sufficient evidence) and check
     //     timeout FIRST so it isn't misclassified as a generic spawn
     //     failure.
-    //   - true spawn failure (bun off PATH, ENOENT, EACCES):
+    //   - true spawn failure (executable missing, ENOENT, EACCES):
     //     result.error set without timeout signal.
     //   - dispatcher invocation error (unknown id, missing flags,
     //     matches-rejection): result.status !== 0, no error.
@@ -257,28 +282,28 @@ for (const entry of applicableSensors) {
       recordHookDrop(
         projectDir,
         "run-sensors",
-        `${entry.id}: subprocess killed by SIGTERM (timeout)`
+        `sensor ${entry.id} timed out: subprocess killed by SIGTERM`
       );
     } else if (result.error) {
       recordHookDrop(
         projectDir,
         "run-sensors",
-        `${entry.id}: ${result.error.message}`
+        `sensor ${entry.id} could not start: ${result.error.message}`
       );
     } else if (result.status !== 0) {
       const stderr = result.stderr?.toString().trim() ?? "";
       recordHookDrop(
         projectDir,
         "run-sensors",
-        `${entry.id}: dispatcher exit ${result.status}${stderr ? `: ${stderr}` : ""}`
+        `sensor ${entry.id} dispatcher exit ${result.status}${stderr ? `: ${stderr}` : ""}`
       );
     }
   } catch (e: unknown) {
-    // Thrown error from spawnSync itself — not from the child process.
+    // Thrown by aidlcEngineCommand or spawnSync itself - not by the child process.
     recordHookDrop(
       projectDir,
       "run-sensors",
-      `${entry.id}: ${e instanceof Error ? e.message : String(e)}`
+      `sensor ${entry.id} could not run: ${e instanceof Error ? e.message : String(e)}`
     );
   }
 }

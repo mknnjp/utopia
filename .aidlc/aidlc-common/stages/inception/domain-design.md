@@ -156,9 +156,10 @@ Number ADRs sequentially (`ADR-001`, `ADR-002`, …). Where a decision came from
 
 ### Step 6: Record Traceability
 
-Create `<record>/inception/domain-design/traceability.json`. When
-`stories.md` exists, enumerate every `USx.y`; otherwise enumerate every `FR`
-from `requirements.md`. Map each upstream ID to the **component or entity**
+Create `<record>/inception/domain-design/traceability.json` by running
+`bun .aidlc/tools/aidlc.ts engine sensor-traceability --stage domain-design --output-path <that path> --write-upstream`:
+when `stories.md` exists it lists every `USx.y`, otherwise every `FR`
+Requirements Analysis recorded (a requirement with sub-requirements is traced through its `FR{n}.{m}` IDs and needs no row of its own), each with a `GAP` row. Map each upstream ID to the **component or entity**
 in `components.md` that realizes it — those are the only identifiers this
 stage's source of truth defines (it does not name services or public methods;
 method- and API-level targets are pinned later in Contract Design and
@@ -178,7 +179,7 @@ Functional Design):
 ### Step 7: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .aidlc/tools/aidlc-orchestrate.ts report --stage domain-design --result <outcome>`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage domain-design --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 ### Step 8: Present Completion & Request Approval
@@ -190,11 +191,14 @@ Use stage-protocol.md completion template with completion emoji: :building_const
 - Structured approval question with options:
   - Approve (continue to next stage)
   - Request Changes (provide revision feedback)
-  - Add Units Generation (if it was skipped in execution plan)
+  - Approve, and add Units Generation next (if it was skipped in execution plan)
 
-If "Add Units Generation" is selected, run
-`bun .aidlc/tools/aidlc-utility.ts recompose --add units-generation`
-before re-entering the approval flow.
+If they pick "Approve, and add Units Generation next", run
+`bun .aidlc/tools/aidlc.ts engine orchestrate next --add units-generation` and follow its
+step, which names the report that records their approval; Units Generation
+runs next. If they only ask to add Units Generation, run the same
+`next --add units-generation`, say in one line that it is on the plan, and ask
+once whether they approve the design as it is or want anything changed.
 
 ## Sensors
 
@@ -209,9 +213,8 @@ fallback functional requirement, is declared and covered.
 
 ## Learn
 
-Follow stage-protocol.md §13: maintain `<record>/<phase>/<stage>/memory.md`
-under the four standard headings while working; before the approval gate,
-surface candidates with `aidlc-learnings.ts`;
-still ask the mandatory "Anything to add for next time?" question, and persist confirmed selections
-with the tool. The memory file stays in the artefact directory, and the stage
-file remains immutable.
+When `directive.protocol_modules` lists `learnings`, follow
+`stage-protocol-learnings.md`: keep the diary at `directive.memory_path` while
+working, and take the learnings step before the approval gate; that module says
+when it asks the person anything. When the module is absent, skip both the diary
+and the step.

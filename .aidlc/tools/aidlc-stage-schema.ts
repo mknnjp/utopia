@@ -1,8 +1,8 @@
 // Stage frontmatter schema — machine-checkable realisation of the spec in
-// dist/claude/.claude/aidlc-common/protocols/stage-definition.md. Consumed by
-// parseStageFrontmatter (lib.ts), aidlc-graph compile, and the doctor
-// schema-lint check (aidlc-utility.ts handleDoctor). Hand-rolled,
-// zero-dep — matches parseAgentFrontmatter precedent in lib.ts. Pure
+// core/aidlc-common/protocols/stage-definition.md. Consumed by aidlc-graph
+// compile and the doctor schema-lint check (aidlc-utility.ts
+// collectDoctorReport). Hand-rolled,
+// zero-dep - matches parseAgentFrontmatter precedent in aidlc-lib.ts. Pure
 // validator: no I/O, no YAML parsing, no mutation — callers pass an
 // already-parsed object.
 
@@ -58,27 +58,35 @@ export interface StageFrontmatter {
   // to all kinds; a listed one is pruned out of a unit whose kind is not in
   // its list. It prunes BOTH the directive produces paths and the coverage
   // set - exempt from nothing. Absent map = full matrix. Each key must name a
-  // produces entry; each value must be a non-empty list of valid kinds.
+  // produces or optional_produces entry; each value must be a non-empty list
+  // of valid kinds.
   produces_kinds?: Record<string, string[]>;
   consumes: Array<{
     artifact: string;
     required: boolean;
     conditional_on?: "brownfield" | "greenfield";
+    // cited - the deliverables cite this input whenever it exists; the compile
+    // lists these consumes as the stage's `cites`. A key inside the consume
+    // because 2.8.0 to 2.11.0, which refresh a project with their own
+    // validator, pass one there and refuse a new top-level key.
+    cited?: boolean;
   }>;
   requires_stage: string[];
   sensors?: string[];
-  // scopes — the per-stage scope-membership list. Active field:
-  // the transpose of the legacy scope-mapping.json EXECUTE/SKIP matrix
-  // onto stages. Naming a scope here marks the stage EXECUTE under that
-  // scope; absence means SKIP. Optional in the schema (absent and `[]`
-  // treated identically) so a fixture stage with no membership still
-  // validates. `aidlc-graph compile` reads this to emit the compiled grid.
+  // scopes - the per-stage scope-membership list. Naming a scope here marks
+  // the stage EXECUTE under that scope; absence means SKIP. Optional in the
+  // schema (absent and `[]` treated identically) so a fixture stage with no
+  // membership still validates. `aidlc-graph compile` reads this to emit the
+  // compiled grid.
   scopes?: string[];
   // reviewer — agent slug to invoke as a quality gate after the stage body
   // (stage-protocol-reviewer.md §12a). Optional; absent when the stage has no review step.
   reviewer?: string;
   // review_artifact — required with reviewer. Names the required Markdown
-  // produces[] artifact that owns the appended `## Review` section.
+  // produces[] artifact the review is about: the artifact the review record is
+  // keyed to, named at the gate, and used in `--reject-finding <artifact>#R-NN`.
+  // The reviewer never writes to it; a legacy `## Review` section inside it is
+  // read for migration only.
   review_artifact?: string;
   // reviewer_max_iterations — review-cycle cap before escalating to the human.
   // Defaults to 2 when reviewer is present.
@@ -93,8 +101,12 @@ export interface StageFrontmatter {
   summary_confirmation?: "required" | "if-present";
   // when — structured activation predicate (plugin mechanism, Layer 4). A
   // single-key map; the one predicate is `producer-in-plan: <artifact-slug>`.
-  // Accepted for shape here; the compile-time grid evaluation is separate.
+  // Accepted for shape here; no engine pass evaluates it yet.
   when?: { "producer-in-plan"?: string };
+  // ars — composer screening prior: the frontmatter twin of one
+  // tools/data/ars-priors.json stage entry, for stages that file does not name
+  // (plugin stages). Shape-validated here; compiled verbatim into the node.
+  ars?: StageArsPrior;
   // required_sections — named `## ` H2 sections a stage's output must contain
   // (plugin contribution mechanism §6). Optional list of non-empty names.
   required_sections?: string[];
@@ -156,10 +168,38 @@ export const RESERVED_KEYS: Readonly<Record<string, string>> = {
 };
 
 // Allowed predicate keys for the stage `when:` map (plugin mechanism, Layer 4).
-// Today only `producer-in-plan`. `when` is no longer reserved — it is an active
-// (shape-validated) structured predicate; compile-time grid evaluation is a
-// separate pass. Adding a predicate is one entry here + one grid-pass case.
+// Today only `producer-in-plan`. `when` is an active (shape-validated)
+// structured predicate that no engine pass evaluates yet (see the Activation
+// note in docs/reference/18-plugin-mechanism.md). Adding a predicate is one
+// entry here + one case in that pass when it lands.
 export const WHEN_PREDICATE_KEYS = ["producer-in-plan"] as const;
+
+// Composer screening prior a stage may carry in its own frontmatter (`ars:`).
+// The shipped tools/data/ars-priors.json names every core stage and nothing
+// else, so a stage the file does not know (a plugin stage) declares the same
+// four facts here and `aidlc-graph ars` screens it instead of listing it as
+// `no-prior`. The component symbols, the role vocabulary, and the project
+// types are the priors file's own; aidlc-graph.ts imports them from here so
+// the two cannot drift.
+export const ARS_COMPONENT_KEYS = ["iae", "csu", "ve", "r", "ua"] as const;
+export type ArsComponentKey = (typeof ARS_COMPONENT_KEYS)[number];
+export const ARS_ROLES = ["initialization", "core", "phase-gate", "structural"] as const;
+export type ArsRole = (typeof ARS_ROLES)[number];
+export const ARS_PROJECT_TYPE_KEYS = ["brownfield", "greenfield"] as const;
+export type ArsProjectTypeKey = (typeof ARS_PROJECT_TYPE_KEYS)[number];
+// The cost scale the composer persona documents (1 trivial .. 5 heavy). Every
+// value needs an evThresholds entry in the priors file; aidlc-graph.ts checks
+// that coupling at screening time because this validator never reads the file.
+export const ARS_COST_MIN = 1;
+export const ARS_COST_MAX = 5;
+const ARS_KEYS: ReadonlySet<string> = new Set(["targets", "cost", "role", "project_types"]);
+
+export interface StageArsPrior {
+  targets: ArsComponentKey[];
+  cost: number | null;
+  role?: ArsRole;
+  project_types?: ArsProjectTypeKey[];
+}
 
 const REQUIRED_FIELDS = [
   "slug",
@@ -176,7 +216,7 @@ const REQUIRED_FIELDS = [
   "outputs",
 ] as const;
 
-const OPTIONAL_FIELDS = ["number", "name", "plugin", "for_each", "workspace_requires", "optional_produces", "produces_kinds", "sensors", "scopes", "reviewer", "review_artifact", "reviewer_max_iterations", "review_class", "summary_confirmation", "when", "required_sections"] as const;
+const OPTIONAL_FIELDS = ["number", "name", "plugin", "for_each", "workspace_requires", "optional_produces", "produces_kinds", "sensors", "scopes", "reviewer", "review_artifact", "reviewer_max_iterations", "review_class", "summary_confirmation", "when", "ars", "required_sections"] as const;
 
 const KNOWN_FIELDS = new Set<string>([...REQUIRED_FIELDS, ...OPTIONAL_FIELDS]);
 
@@ -184,7 +224,7 @@ const KNOWN_FIELDS = new Set<string>([...REQUIRED_FIELDS, ...OPTIONAL_FIELDS]);
 // digits, or hyphens. Spec says "kebab-case; must match filename stem".
 // compileStageGraph checks filename-stem equality where the filename is known;
 // here we only validate the shape.
-const SLUG_RE = /^[a-z][a-z0-9-]*$/;
+export const SLUG_RE = /^[a-z][a-z0-9-]*$/;
 
 // Stage display number: `<int>.<int>` (e.g. "0.1", "2.7", "4.50"). Shape only —
 // numericStageOrder (aidlc-graph.ts) parses it; an authored value is an
@@ -200,14 +240,39 @@ const ARTIFACT_SLUG_RE = /^[a-z][a-z0-9-]*$/;
 
 // --- Validator ---
 
+// A list of symbols from `allowed`, each at most once; every bad item is
+// reported under its own index.
+function checkSymbolList(
+  value: unknown,
+  field: string,
+  allowed: readonly string[],
+  nonEmpty: boolean,
+  errors: string[],
+): void {
+  if (!Array.isArray(value) || (nonEmpty && value.length === 0)) {
+    errors.push(`${field} must be a ${nonEmpty ? "non-empty " : ""}list, got ${describe(value)}`);
+    return;
+  }
+  const seen = new Set<string>();
+  value.forEach((item: unknown, i) => {
+    if (typeof item !== "string" || !allowed.includes(item)) {
+      errors.push(`${field}[${i}] must be one of ${allowed.join(" | ")}, got ${describe(item)}`);
+    } else if (seen.has(item)) {
+      errors.push(`${field}[${i}] repeats "${item}"`);
+    } else {
+      seen.add(item);
+    }
+  });
+}
+
 export function validateStageFrontmatter(
   obj: unknown,
   ctx?: ValidationContext
 ): ValidationResult {
   // Rule 1: shape. Must be a plain object. If not, return a single error —
   // we can't collect field-level errors on a non-object. After this guard,
-  // TS narrows `obj` to `object` (still not `Record<string, unknown>`),
-  // so we use isPlainObject to get the indexable narrow.
+  // isPlainObject narrows `obj` to `Record<string, unknown>` so field checks
+  // can index it.
   if (!isPlainObject(obj)) {
     const actual =
       obj === null ? "null" : Array.isArray(obj) ? "array" : typeof obj;
@@ -251,9 +316,10 @@ export function validateStageFrontmatter(
   checkString(o, "slug", errors);
   checkSlugPattern(o, "slug", SLUG_RE, "kebab-case", errors);
 
-  // number / name / plugin — optional plugin-mechanism display + ownership
-  // metadata. Absent is valid (core stages omit them); shape-checked when
-  // present. number must be `<int>.<int>`; name + plugin any non-empty string.
+  // number / name / plugin — optional display + ownership metadata. Absent is
+  // valid; core stages use name only when title-casing the slug would lose an
+  // established label. number must be `<int>.<int>`; name + plugin any
+  // string.
   checkString(o, "number", errors);
   checkSlugPattern(o, "number", NUMBER_RE, "<phase-prefix>.<index>", errors);
   checkString(o, "name", errors);
@@ -306,9 +372,6 @@ export function validateStageFrontmatter(
     }
   }
 
-  // for_each — optional. Absent → valid. Present → must be string.
-  // Explicit `null` falls through the typeof check and is rejected as
-  // "must be string, got object" — same branch as any other wrong type.
   if ("for_each" in o && o.for_each !== undefined) {
     if (typeof o.for_each !== "string") {
       errors.push(`for_each must be string, got ${describe(o.for_each)}`);
@@ -339,7 +402,7 @@ export function validateStageFrontmatter(
   checkString(o, "review_artifact", errors);
 
   // reviewer_max_iterations — optional. When present, must be a positive
-  // integer (>= 1). V1 makes the parser return a number for an integer
+  // integer (>= 1). The parser returns a number for an integer
   // literal; a non-integer literal stays a string and is rejected here as a
   // type error rather than silently coercing to NaN at compile.
   checkPositiveInteger(o, "reviewer_max_iterations", errors);
@@ -430,6 +493,54 @@ export function validateStageFrontmatter(
     }
   }
 
+  // ars — optional composer screening prior (targets + cost, optional role and
+  // project_types): the frontmatter twin of one tools/data/ars-priors.json
+  // stage entry, authored on stages that file does not name. Shape only; the
+  // cost/evThresholds coupling is checked by `aidlc-graph ars` against the
+  // priors file it loads.
+  if ("ars" in o && o.ars !== undefined) {
+    const a = o.ars;
+    if (!isPlainObject(a)) {
+      errors.push(`ars must be object, got ${describe(a)}`);
+    } else {
+      for (const k of Object.keys(a)) {
+        if (!ARS_KEYS.has(k)) {
+          errors.push(`ars has unknown key "${k}"; allowed: targets | cost | role | project_types`);
+        }
+      }
+      if (!("targets" in a)) {
+        errors.push("ars.targets is required (an empty list is allowed)");
+      } else {
+        checkSymbolList(a.targets, "ars.targets", ARS_COMPONENT_KEYS, false, errors);
+      }
+      if (!("cost" in a)) {
+        errors.push("ars.cost is required (null marks a stage that is not numerically screenable)");
+      } else if (
+        a.cost !== null &&
+        !(
+          typeof a.cost === "number" &&
+          Number.isInteger(a.cost) &&
+          a.cost >= ARS_COST_MIN &&
+          a.cost <= ARS_COST_MAX
+        )
+      ) {
+        errors.push(
+          `ars.cost must be null or an integer ${ARS_COST_MIN}..${ARS_COST_MAX}, got ${describe(a.cost)}`
+        );
+      }
+      if (
+        "role" in a &&
+        a.role !== undefined &&
+        !(typeof a.role === "string" && (ARS_ROLES as readonly string[]).includes(a.role))
+      ) {
+        errors.push(`ars.role must be one of ${ARS_ROLES.join(" | ")}, got ${describe(a.role)}`);
+      }
+      if ("project_types" in a && a.project_types !== undefined) {
+        checkSymbolList(a.project_types, "ars.project_types", ARS_PROJECT_TYPE_KEYS, true, errors);
+      }
+    }
+  }
+
   checkStringArray(o, "produces", errors);
 
   // optional_produces - optional. When present, must be a list of kebab-case
@@ -452,10 +563,9 @@ export function validateStageFrontmatter(
 
   // produces_kinds - optional per-kind applicability map. When present it must
   // be a plain object whose every key names a produces entry (union with
-  // optional_produces read defensively so this validates both standalone and
-  // once a conditional-produces axis lands) and whose every value is a
-  // non-empty list of valid unit kinds. An orphan key (typo) is an error: a
-  // silently-ignored map entry would defeat the pruning invisibly.
+  // optional_produces) and whose every value is a non-empty list of valid unit
+  // kinds. An orphan key (typo) is an error: a silently-ignored map entry
+  // would defeat the pruning invisibly.
   if ("produces_kinds" in o && o.produces_kinds !== undefined) {
     const pk = o.produces_kinds;
     if (!isPlainObject(pk)) {
@@ -532,7 +642,7 @@ export function validateStageFrontmatter(
     }
   }
 
-  // Rule 8: nested consumes[] — array of {artifact, required, conditional_on?}.
+  // Rule 8: nested consumes[], an array of {artifact, required, conditional_on?, cited?}.
   if ("consumes" in o) {
     const consumesVal = o.consumes;
     if (!Array.isArray(consumesVal)) {
@@ -573,6 +683,10 @@ export function validateStageFrontmatter(
             );
           }
         }
+
+        if ("cited" in e && e.cited !== undefined && typeof e.cited !== "boolean") {
+          errors.push(`consumes[${i}].cited must be boolean, got ${describe(e.cited)}`);
+        }
       });
     }
   }
@@ -596,7 +710,7 @@ export function validateStageFrontmatter(
   }
 
   // scopes — optional. When present, must be a list of non-empty strings.
-  // Cross-validation (each name resolves to a known .claude/scopes/*.md
+  // Cross-validation (each name resolves to a known <harness>/scopes/*.md
   // file) is not enforced here — the schema validator doesn't read the
   // scopes registry; `aidlc-graph compile` transposes whatever names are
   // declared into the grid, and an unknown scope name simply yields a
@@ -643,9 +757,9 @@ export function validateStageFrontmatter(
       });
     }
     // reviewer is an agent-slug field like lead_agent; cross-check it against
-    // the same roster (exempting the reserved orchestrator pseudo-agent). This
-    // is the silent-failure fix: a reviewer naming a non-existent agent passed
-    // validation today and surfaced only as a runtime no-op.
+    // the same roster (exempting the reserved orchestrator pseudo-agent). Without
+    // this check a reviewer naming a non-existent agent passes validation and
+    // surfaces only as a runtime no-op.
     if (
       typeof o.reviewer === "string" &&
       o.reviewer !== RESERVED_AGENT_SLUG &&
@@ -659,14 +773,13 @@ export function validateStageFrontmatter(
     return { valid: false, errors };
   }
 
-  // On success, return the normalized clone; deprecated aliases are not exposed
-  // past the schema boundary. Callers must NOT mutate `data`; it is treated as
-  // immutable by convention. The double-cast (unknown → StageFrontmatter) is the
-  // documented trust boundary: rules 1–9 above have already verified each field's shape
-  // (presence, type, enum, regex), so the structural compatibility is
-  // guaranteed at runtime even though TS can't follow the per-field
-  // checks. Centralising this single cast in the validator keeps the
-  // rest of the codebase cast-free.
+  // On success, return the validated clone. Callers must NOT mutate `data`; it
+  // is treated as immutable by convention. The double-cast (unknown ->
+  // StageFrontmatter) is the documented trust boundary: rules 1-9 above have
+  // already verified each field's shape (presence, type, enum, regex), so the
+  // structural compatibility is guaranteed at runtime even though TS can't
+  // follow the per-field checks. Centralising this single cast in the validator
+  // keeps it out of every caller.
   // type-coverage:ignore-next-line — documented validator trust boundary
   return { valid: true, data: o as unknown as StageFrontmatter };
 }

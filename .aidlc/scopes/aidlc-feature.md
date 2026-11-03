@@ -5,6 +5,12 @@ keywords: []
 description: Full lifecycle for new features, practical depth
 skeleton: on
 runner: true
+guard_policy: off
+sensors: on
+learnings: on
+summary_confirmation: on
+plan_approval: on
+collaborators: off
 ---
 
 # feature scope
@@ -13,6 +19,8 @@ The full-lifecycle scope for new feature work at practical depth. Like
 `enterprise`, it runs every stage in the graph, but the stage bodies apply
 Standard rather than Comprehensive depth — lighter ceremony, the same
 end-to-end coverage from ideation through operation.
+
+Guard Policy defaults to off: changed inputs are recorded and announced, the run continues, and plan approval, review freeze, state transition, and reviewer read scope are lowered for undirected work. Human presence stays up.
 
 ## Why every stage
 

@@ -1,8 +1,9 @@
 ---
 id: traceability
 kind: deterministic
-command: bun .aidlc/tools/aidlc-sensor-traceability.ts
+command: bun .aidlc/tools/aidlc.ts engine sensor-traceability
 default_severity: advisory
+fire_on: gate
 description: Verifies element-level upstream coverage, downstream targets, and derived orphans in traceability.json
 category: document-traceability
 matches: "**/traceability.json"
@@ -19,22 +20,47 @@ output_schema:
   invalid_targets: string[]
   findings_count: integer
   reason: string
-timeout_seconds: 5
+timeout_seconds: 300
 ---
 
 # traceability sensor
 
-Deterministic element-level verification of each stage's JSON coverage table:
+Deterministic element-level verification of each stage's JSON coverage table,
+run when the stage's documents are handed on (its review request, or the report
+that opens its gate when no review took them first) and again when its gate
+opens, on the tables as they are then:
 
 1. Validates the runtime JSON shape and the closed status set.
 2. Fails on `GAP`, `ORPHAN`, missing coverage rows, or undeclared upstream IDs.
-3. Requires non-empty targets for `OK`, `Deferred`, and `N/A`.
+   A requirement whose sub-requirements are upstream too (`FR1` beside
+   `FR1.1`) is traced through them and needs no row of its own.
+3. Requires non-empty targets for `OK`, `Deferred`, and `N/A`; for `Deferred`
+   and `N/A` the target is the reason.
 4. Resolves upstream IDs from the authored artifacts and fails closed when the
-   expected source is missing or yields no IDs.
+   expected source is missing or yields no IDs. FR and NFR IDs come from the
+   `ids` Requirements Analysis records in its own traceability.json, spelled as
+   requirements.md spells them (each with its `kind`, a sub-requirement `of` its
+   requirement); without that record, a table's requirements are the ones it
+   lists and the ones the FR and NFR ID patterns find in requirements.md.
 5. Verifies deterministic targets where possible: stories, Unit mappings,
    business rules, and workspace-relative code paths.
 6. Derives functional-design orphans from `rules.md` rather than
    trusting only the self-reported `reverse` array.
+
+A later stage starts its table with the same tool, `--stage <slug> --output-path
+<its traceability.json> --write-upstream`: it adds every upstream ID this check
+asks for to `upstream_ids`, each with a `GAP` row, keeps what the table already
+holds, and writes nothing when nothing is missing.
+
+Build and Test's coverage gate runs the same tool with `--stage build-and-test`
+and no output path. It reads every Code Generation table and prints each
+requirement and acceptance criterion as built or not: a requirement with
+sub-requirements is built when each Unit has built its own, a row for the
+parent alone not covering them; otherwise by its own row or, when User Stories
+ran, through the criteria of the stories User Stories traced it to. One that
+nothing builds is settled when the latest stage that traced it (User Stories,
+NFR Requirements, then Code Generation) marked it `N/A` with its reason in
+every table there that lists it; an `N/A` with no reason is not settled.
 
 ## Expected JSON schema
 
@@ -48,9 +74,13 @@ Deterministic element-level verification of each stage's JSON coverage table:
     { "id": "AC1.2.1", "status": "GAP" }
   ],
   "reverse": [
-    { "id": "BR1.3", "status": "ORPHAN" }
+    { "id": "BR1.3", "status": "ORPHAN" },
+    { "id": "BR1.4", "status": "N/A", "target": "technical validation rule" }
   ]
 }
 ```
 
-Valid statuses are `OK`, `GAP`, `ORPHAN`, `Deferred`, and `N/A`.
+Valid statuses are `OK`, `GAP`, `ORPHAN`, `Deferred`, and `N/A`. Every
+upstream ID goes in `upstream_ids` and `coverage`, `N/A` there when it does
+not apply; `reverse` lists only what the stage produced that traces to nothing
+upstream.

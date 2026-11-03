@@ -7,6 +7,12 @@ keywords:
 description: Skip operations, ship the core
 skeleton: on
 runner: true
+guard_policy: off
+sensors: on
+learnings: on
+summary_confirmation: on
+plan_approval: on
+collaborators: off
 ---
 
 # mvp scope
@@ -16,6 +22,8 @@ core fast. Ideation runs a reduced ceremony (no market-research, no
 team-formation, no approval-handoff) and the entire operation phase is
 skipped — an MVP proves the product, it does not yet carry production
 operations weight.
+
+Guard Policy defaults to off: changed inputs are recorded and announced, the run continues, and plan approval, review freeze, state transition, and reviewer read scope are lowered for undirected work. Human presence stays up.
 
 ## Why these stages, why skip those
 
