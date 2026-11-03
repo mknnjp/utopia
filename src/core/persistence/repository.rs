@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use sqlx::{Executor, PgPool, Postgres, Transaction};
+use sqlx::{AssertSqlSafe, Executor, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::core::auth::models::{TokenRecord, UserRecord};
@@ -469,7 +469,7 @@ impl AccountReadRepository for PgAccountRepository {
             placeholders_str
         );
 
-        let mut query_builder = sqlx::query_as::<_, AccountRecord>(&query);
+        let mut query_builder = sqlx::query_as::<_, AccountRecord>(AssertSqlSafe(query));
 
         // Bind account_ids (match $1, $2, ... placeholders)
         for account_id in account_ids {
@@ -511,12 +511,12 @@ impl AccountReadRepository for PgAccountRepository {
         let limit = i64::from(filter.limit);
 
         let records = if let Some(account_type) = &filter.account_type {
-            sqlx::query_as::<_, AccountRecord>(&format!(
+            sqlx::query_as::<_, AccountRecord>(AssertSqlSafe(format!(
                 "SELECT {ACCOUNT_COLUMNS} FROM accounts \
                      WHERE user_id = $1 AND account_type = $2 AND deleted_at IS NULL \
                      ORDER BY name ASC, id ASC \
                      LIMIT $3 OFFSET $4",
-            ))
+            )))
             .bind(user_id)
             .bind(account_type)
             .bind(limit)
@@ -524,12 +524,12 @@ impl AccountReadRepository for PgAccountRepository {
             .fetch_all(pool)
             .await?
         } else {
-            sqlx::query_as::<_, AccountRecord>(&format!(
+            sqlx::query_as::<_, AccountRecord>(AssertSqlSafe(format!(
                 "SELECT {ACCOUNT_COLUMNS} FROM accounts \
                      WHERE user_id = $1 AND deleted_at IS NULL \
                      ORDER BY name ASC, id ASC \
                      LIMIT $2 OFFSET $3",
-            ))
+            )))
             .bind(user_id)
             .bind(limit)
             .bind(offset)
@@ -554,10 +554,10 @@ impl AccountReadRepository for PgAccountRepository {
     where
         E: Executor<'c, Database = Postgres> + Send,
     {
-        let record = sqlx::query_as::<_, AccountRecord>(&format!(
+        let record = sqlx::query_as::<_, AccountRecord>(AssertSqlSafe(format!(
             "SELECT {ACCOUNT_COLUMNS} FROM accounts \
                  WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
-        ))
+        )))
         .bind(account_id)
         .bind(user_id)
         .fetch_optional(executor)
@@ -576,7 +576,7 @@ impl AccountReadRepository for PgAccountRepository {
             return Ok(Vec::new());
         }
         use sqlx::QueryBuilder;
-        let mut builder: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(
             "SELECT id, user_id, account_type, name, current_balance, currency_code, \
              created_at, updated_at, active, initial_balance, initial_balance_date, \
              virtual_balance, deleted_at, iban, bic, account_number, notes, \
@@ -633,7 +633,7 @@ impl AccountWriteRepository for PgAccountRepository {
         cc_monthly_payment_date: Option<&str>,
         opening_balance_date: Option<DateTime<Utc>>,
     ) -> Result<AccountRecord, RepoError> {
-        let record = sqlx::query_as::<_, AccountRecord>(&format!(
+        let record = sqlx::query_as::<_, AccountRecord>(AssertSqlSafe(format!(
             "INSERT INTO accounts \
              (user_id, account_type, name, current_balance, currency_code, \
               active, initial_balance, initial_balance_date, virtual_balance, \
@@ -646,7 +646,7 @@ impl AccountWriteRepository for PgAccountRepository {
                  $17, $18, $19, $20, \
                  $21, $22, $23) \
              RETURNING {ACCOUNT_COLUMNS}",
-        ))
+        )))
         .bind(user_id)
         .bind(account_type)
         .bind(name)
@@ -703,7 +703,7 @@ impl AccountWriteRepository for PgAccountRepository {
     ) -> Result<AccountRecord, RepoError> {
         use sqlx::QueryBuilder;
 
-        let mut builder: QueryBuilder<'_, Postgres> = QueryBuilder::new("UPDATE accounts SET ");
+        let mut builder: QueryBuilder<Postgres> = QueryBuilder::new("UPDATE accounts SET ");
 
         let mut sep = builder.separated(", ");
 
@@ -831,7 +831,7 @@ impl AccountWriteRepository for PgAccountRepository {
         }
 
         // If no fields to update, return error (nothing to update)
-        if builder.sql().ends_with("SET ") {
+        if builder.sql().as_str().ends_with("SET ") {
             return Err(RepoError::Database(sqlx::Error::RowNotFound));
         }
 
@@ -1032,7 +1032,7 @@ impl TransactionReadRepository for PgTransactionRepository {
 
         let count_sql = format!("SELECT COUNT(*) FROM transaction_journals WHERE {where_clause}");
         let total_records: (i64,) = {
-            let mut query = sqlx::query_as(&count_sql);
+            let mut query = sqlx::query_as(AssertSqlSafe(count_sql));
             query = query.bind(user_id);
             if let Some(ref start) = filter.start_date {
                 query = query.bind(start);
@@ -1055,7 +1055,7 @@ impl TransactionReadRepository for PgTransactionRepository {
         );
 
         let records = {
-            let mut query = sqlx::query_as::<_, TransactionRecord>(&list_sql);
+            let mut query = sqlx::query_as::<_, TransactionRecord>(AssertSqlSafe(list_sql));
             query = query.bind(user_id);
             if let Some(ref start) = filter.start_date {
                 query = query.bind(start);
@@ -1090,10 +1090,10 @@ impl TransactionReadRepository for PgTransactionRepository {
     where
         E: Executor<'c, Database = Postgres> + Send,
     {
-        let record = sqlx::query_as::<_, TransactionRecord>(&format!(
+        let record = sqlx::query_as::<_, TransactionRecord>(AssertSqlSafe(format!(
             "SELECT {TRANSACTION_COLUMNS} FROM transaction_journals \
              WHERE id = $1 AND user_id = $2",
-        ))
+        )))
         .bind(transaction_id)
         .bind(user_id)
         .fetch_optional(executor)
@@ -1122,12 +1122,12 @@ impl TransactionReadRepository for PgTransactionRepository {
         .fetch_one(pool)
         .await?;
 
-        let records = sqlx::query_as::<_, TransactionRecord>(&format!(
+        let records = sqlx::query_as::<_, TransactionRecord>(AssertSqlSafe(format!(
             "SELECT {TRANSACTION_COLUMNS} FROM transaction_journals \
              WHERE user_id = $1 AND (source_id = $2 OR destination_id = $2) \
              ORDER BY date DESC, id DESC \
              LIMIT $3 OFFSET $4",
-        ))
+        )))
         .bind(user_id)
         .bind(account_id)
         .bind(limit_i64)
@@ -1151,13 +1151,13 @@ impl TransactionWriteRepository for PgTransactionRepository {
         tx: &mut Transaction<'_, Postgres>,
         request: CreateTransactionRequest,
     ) -> Result<TransactionRecord, RepoError> {
-        let record = sqlx::query_as::<_, TransactionRecord>(&format!(
+        let record = sqlx::query_as::<_, TransactionRecord>(AssertSqlSafe(format!(
             "INSERT INTO transaction_journals \
              (user_id, group_id, transaction_type, description, amount, currency_code, date, \
               source_id, destination_id, category_name, notes, reconciled) \
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) \
              RETURNING {TRANSACTION_COLUMNS}",
-        ))
+        )))
         .bind(request.user_id)
         .bind(request.group_id)
         .bind(request.transaction_type)
@@ -1185,7 +1185,7 @@ impl TransactionWriteRepository for PgTransactionRepository {
     ) -> Result<TransactionRecord, RepoError> {
         use sqlx::QueryBuilder;
 
-        let mut builder: QueryBuilder<'_, Postgres> =
+        let mut builder: QueryBuilder<Postgres> =
             QueryBuilder::new("UPDATE transaction_journals SET ");
 
         let mut sep = builder.separated(", ");
@@ -1247,7 +1247,7 @@ impl TransactionWriteRepository for PgTransactionRepository {
             sep.push_bind(v);
         }
 
-        if builder.sql().ends_with("SET ") {
+        if builder.sql().as_str().ends_with("SET ") {
             return Err(RepoError::Database(sqlx::Error::RowNotFound));
         }
 
@@ -1272,10 +1272,10 @@ impl TransactionWriteRepository for PgTransactionRepository {
         transaction_id: Uuid,
         user_id: Uuid,
     ) -> Result<Option<TransactionRecord>, RepoError> {
-        let record = sqlx::query_as::<_, TransactionRecord>(&format!(
+        let record = sqlx::query_as::<_, TransactionRecord>(AssertSqlSafe(format!(
             "DELETE FROM transaction_journals WHERE id = $1 AND user_id = $2 \
              RETURNING {TRANSACTION_COLUMNS}",
-        ))
+        )))
         .bind(transaction_id)
         .bind(user_id)
         .fetch_optional(tx.as_mut())

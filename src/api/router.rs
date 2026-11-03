@@ -31,23 +31,23 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let protected = Router::new()
         .route("/api/v1/accounts", get(list_accounts_handler))
         .route("/api/v1/accounts", post(create_account_handler))
-        .route("/api/v1/accounts/:id", get(get_account_handler))
-        .route("/api/v1/accounts/:id", put(update_account_handler))
-        .route("/api/v1/accounts/:id", delete(delete_account_handler))
+        .route("/api/v1/accounts/{id}", get(get_account_handler))
+        .route("/api/v1/accounts/{id}", put(update_account_handler))
+        .route("/api/v1/accounts/{id}", delete(delete_account_handler))
         .route(
-            "/api/v1/accounts/:id/transactions",
+            "/api/v1/accounts/{id}/transactions",
             get(list_account_transactions_handler),
         )
         .route("/api/v1/transactions", get(list_transactions_handler))
         .route("/api/v1/transactions", post(create_transaction_handler))
-        .route("/api/v1/transactions/:id", get(get_transaction_handler))
-        .route("/api/v1/transactions/:id", put(update_transaction_handler))
+        .route("/api/v1/transactions/{id}", get(get_transaction_handler))
+        .route("/api/v1/transactions/{id}", put(update_transaction_handler))
         .route(
-            "/api/v1/transactions/:id",
+            "/api/v1/transactions/{id}",
             delete(delete_transaction_handler),
         )
         .route("/api/v1/tokens", post(issue_token_handler))
-        .route("/api/v1/tokens/:id", delete(revoke_token_handler))
+        .route("/api/v1/tokens/{id}", delete(revoke_token_handler))
         .route("/api/v1/currencies", get(list_currencies_handler))
         .route("/api/v1/about", get(get_about_handler))
         .route("/api/v1/about/user", get(get_about_user_handler))

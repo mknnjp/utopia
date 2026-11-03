@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
-use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
-use argon2::{Argon2, Params, Version};
+use argon2::{Argon2, Params, PasswordHasher, Version};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use chrono::Utc;
-use rand::RngCore;
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
@@ -222,9 +221,8 @@ impl TokenService {
         .map_err(|_| AuthError::DependencyFailure)?;
 
         let argon2 = Argon2::new(argon2::Algorithm::Argon2id, Version::V0x13, params);
-        let salt = SaltString::generate(&mut OsRng);
         let hash = argon2
-            .hash_password(raw_token.as_bytes(), &salt)
+            .hash_password(raw_token.as_bytes())
             .map_err(|_| AuthError::DependencyFailure)?;
 
         Ok(hash.to_string())
@@ -233,14 +231,15 @@ impl TokenService {
 
 fn generate_token() -> String {
     let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
 fn sha256_hex(value: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(value.as_bytes());
-    format!("{:x}", hasher.finalize())
+    let result = hasher.finalize();
+    result.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {

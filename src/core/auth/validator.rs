@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use argon2::password_hash::{PasswordHash, PasswordVerifier};
-use argon2::Argon2;
+use argon2::password_hash::phc::PasswordHash;
+use argon2::{Argon2, PasswordVerifier};
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -146,7 +146,8 @@ fn parse_bearer(header: Option<&str>) -> Result<&str, AuthError> {
 fn sha256_hex(value: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(value.as_bytes());
-    format!("{:x}", hasher.finalize())
+    let result = hasher.finalize();
+    result.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 fn verify_argon2(raw_token: &str, encoded_hash: &str) -> Result<(), AuthError> {
