@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use argon2::{Argon2, PasswordVerifier};
 use argon2::password_hash::phc::PasswordHash;
+use argon2::{Argon2, PasswordVerifier};
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
