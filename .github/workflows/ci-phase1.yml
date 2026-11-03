@@ -21,10 +21,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Install Rust 1.93.1
-        uses: dtolnay/rust-toolchain@1.93.1
+      - name: Install Rust 1.99.1
+        uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: rustfmt, clippy
 
@@ -50,7 +50,7 @@ jobs:
         run: cargo nextest run --locked
 
       - name: Install cargo-audit (cached)
-        run: cargo install cargo-audit@0.21.0 --locked
+        run: cargo install cargo-audit@0.22.2 --locked
 
       - name: Run cargo-audit (advisory only)
         id: cargo_audit
@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload cargo-audit report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: cargo-audit-report
           path: target/cargo-audit.json

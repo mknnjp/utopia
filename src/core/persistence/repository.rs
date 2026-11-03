@@ -469,8 +469,7 @@ impl AccountReadRepository for PgAccountRepository {
             placeholders_str
         );
 
-        let mut query_builder =
-            sqlx::query_as::<_, AccountRecord>(AssertSqlSafe(query));
+        let mut query_builder = sqlx::query_as::<_, AccountRecord>(AssertSqlSafe(query));
 
         // Bind account_ids (match $1, $2, ... placeholders)
         for account_id in account_ids {
@@ -1056,8 +1055,7 @@ impl TransactionReadRepository for PgTransactionRepository {
         );
 
         let records = {
-            let mut query =
-                sqlx::query_as::<_, TransactionRecord>(AssertSqlSafe(list_sql));
+            let mut query = sqlx::query_as::<_, TransactionRecord>(AssertSqlSafe(list_sql));
             query = query.bind(user_id);
             if let Some(ref start) = filter.start_date {
                 query = query.bind(start);
