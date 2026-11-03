@@ -73,7 +73,7 @@ Create `<record>/inception/user-stories/user-stories-assessment.md` documenting 
 - If skipping: what alternative coverage exists (e.g., requirements alone are sufficient)
 
 If skipping, run
-`{{INVOKE}} engine orchestrate report --stage user-stories --result skipped --reason "<reason>"`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage user-stories --result skipped --reason "<reason>"`.
 The engine records the skip and advances to the next in-scope stage.
 
 ### Step 3: Load Prior Context
@@ -163,7 +163,7 @@ directive's effective `support_agents` is missing. A lead working alone has none
 
 **Write element-level traceability.** Create
 `<record>/inception/user-stories/traceability.json` by running
-`{{INVOKE}} engine sensor-traceability --stage user-stories --output-path <that path> --write-upstream`:
+`bun .aidlc/tools/aidlc.ts engine sensor-traceability --stage user-stories --output-path <that path> --write-upstream`:
 it lists every `FR` and `NFR` ID Requirements Analysis recorded in
 `upstream_ids`, each with a `GAP` row (a requirement with sub-requirements is
 traced through its `FR{n}.{m}` IDs and needs no row of its own). Set each
@@ -189,7 +189,7 @@ After verifying the three lead artifacts and every dispatched collaborator's
 contribution file (none when the lead works alone), run:
 
 ```bash
-{{INVOKE}} engine orchestrate report \
+bun .aidlc/tools/aidlc.ts engine orchestrate report \
   --stage user-stories --result awaiting-approval
 ```
 

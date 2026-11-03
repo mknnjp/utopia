@@ -68,10 +68,10 @@ Read `<record>/aidlc-state.md` to confirm:
 - Project type is brownfield
 
 If the project is not brownfield, run
-`{{INVOKE}} engine orchestrate report --stage reverse-engineering --result skipped --reason "<reason>"`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage reverse-engineering --result skipped --reason "<reason>"`.
 The engine records the skip and advances to the next in-scope stage. The
 project type is the person's call, not the scan's: when they have said this is
-existing code, do not skip; run `{{INVOKE}} engine orchestrate next --project-type brownfield`
+existing code, do not skip; run `bun .aidlc/tools/aidlc.ts engine orchestrate next --project-type brownfield`
 and follow what it returns.
 
 #### Resolve the intent's repo set (multi-repo)
@@ -109,7 +109,7 @@ accumulates across intents. For every repo in the resolved set, run the
 read-only check:
 
 ```
-{{INVOKE}} engine workspace codekb-scope-diff --repo <repo>
+bun .aidlc/tools/aidlc.ts engine workspace codekb-scope-diff --repo <repo>
 ```
 
 - **NO_STORE** - first scan for this repo. Proceed to Step 2; no question.
@@ -165,7 +165,7 @@ Immediately after each human reuse decision, record that repo's
 current-attempt exemption:
 
 ```
-bun {{HARNESS_DIR}}/tools/aidlc-state.ts reuse-artifact reverse-engineering --decision keep --artifacts "<codekb-path output>" [--repo <repo>] [--single]
+bun .aidlc/tools/aidlc-state.ts reuse-artifact reverse-engineering --decision keep --artifacts "<codekb-path output>" [--repo <repo>] [--single]
 ```
 
 Use one row per reused registered repo. For an unrecorded single-repo workspace,
@@ -179,7 +179,7 @@ Immediately before Step 2, take one compare-and-swap snapshot for every repo
 selected for scanning:
 
 ```
-bun {{HARNESS_DIR}}/tools/aidlc-utility.ts codekb-snapshot --repo <repo> --paths <source paths> --json
+bun .aidlc/tools/aidlc-utility.ts codekb-snapshot --repo <repo> --paths <source paths> --json
 ```
 
 Choose `<source paths>` as follows:
@@ -203,7 +203,7 @@ Only after every repository decision has been resolved:
 
 - If every repo is reused on an ordinary workflow run, report the stage as
   skipped exactly once:
-  `{{INVOKE}} engine orchestrate report --stage reverse-engineering --result skipped --reason "codekb reuse: all resolved stores CURRENT, human chose reuse"`.
+  `bun .aidlc/tools/aidlc.ts engine orchestrate report --stage reverse-engineering --result skipped --reason "codekb reuse: all resolved stores CURRENT, human chose reuse"`.
 - If every repo is reused on an isolated run (`directive.single === true`), do
   NOT call the main-workflow skipped report. Return the reused-repositories
   summary to the orchestrator's isolated stage-runner branch; the single-run
@@ -275,12 +275,12 @@ IDE and tool caches even where nothing ignores them (for example .NET `bin/` and
 `obj/` beside a project file), without opening them. The scan only reads the
 code: it runs none of the project's tests, builds or programs unless the person
 asked for that. The "What to Skip" section of
-`{{HARNESS_DIR}}/knowledge/aidlc-developer-agent/code-analysis-guide.md` lists
+`.aidlc/knowledge/aidlc-developer-agent/code-analysis-guide.md` lists
 them and says how the files beside a folder tell when one of those names holds
 hand-written code.
 
 Developer writes the structured scan results following the Developer Code Scan
-Template in `{{HARNESS_DIR}}/knowledge/aidlc-developer-agent/re-artifacts.md`:
+Template in `.aidlc/knowledge/aidlc-developer-agent/re-artifacts.md`:
 
 - Unrecorded project-root repo (no repo is registered, and `codekb-path`
   prints the name it gives the project folder):
@@ -317,14 +317,14 @@ Delegate to Task tool with aidlc-architect-agent:
 - subagent_type="aidlc-architect-agent"
 - The agent persona and knowledge are loaded automatically. Do NOT manually inject the persona.
 - Pass the developer scan handoff path, not its body; the architect reads that file
-- Pass the template path, `{{HARNESS_DIR}}/knowledge/aidlc-developer-agent/re-artifacts.md`:
+- Pass the template path, `.aidlc/knowledge/aidlc-developer-agent/re-artifacts.md`:
   the architect writes the nine artifacts and the Scope of Analysis block from it
 - Include workspace state from aidlc-state.md
 - Pass the snapshot's `head_commit` for the Run Record
 - Tell the architect that when it checks the project's source it follows the
   developer's rule: it leaves AI-DLC's own install and every folder the "What
   to Skip" section of
-  `{{HARNESS_DIR}}/knowledge/aidlc-developer-agent/code-analysis-guide.md`
+  `.aidlc/knowledge/aidlc-developer-agent/code-analysis-guide.md`
   skips (for example .NET `bin/` and `obj/` beside a project file) unlisted
   and unopened, and names none of their files in the artifacts
 
@@ -337,7 +337,7 @@ Architect synthesizes scan results into a complete 9-artifact candidate:
 6. **technology-stack.md** — Languages, frameworks, libraries with versions
 7. **dependencies.md** — External dependencies, internal cross-package dependencies
 8. **code-quality-assessment.md** — Test coverage, linting, CI/CD, documentation quality, tech debt
-9. **reverse-engineering-timestamp.md** - Records when reverse engineering was performed (date, commit hash if available) under a `## Run Record` heading and MUST end with the structured `## Scope of Analysis` block, both from the template in `{{HARNESS_DIR}}/knowledge/aidlc-developer-agent/re-artifacts.md`. Fill it from the developer's Scan Coverage and, for a focused merge, the existing store according to the rules below - it records what is ACTUALLY verified deeply, not what was aspired to. This is the freshness/staleness marker the Step 1 rerun guard reads.
+9. **reverse-engineering-timestamp.md** - Records when reverse engineering was performed (date, commit hash if available) under a `## Run Record` heading and MUST end with the structured `## Scope of Analysis` block, both from the template in `.aidlc/knowledge/aidlc-developer-agent/re-artifacts.md`. Fill it from the developer's Scan Coverage and, for a focused merge, the existing store according to the rules below - it records what is ACTUALLY verified deeply, not what was aspired to. This is the freshness/staleness marker the Step 1 rerun guard reads.
 
 Choose the write behavior recorded in Step 1:
 
@@ -374,7 +374,7 @@ For the block's `fingerprint:` line, run the mint command with the final
 its output verbatim:
 
    ```
-   {{INVOKE}} engine workspace codekb-scope-diff --repo <repo> --mint --paths <analyzed paths>
+   bun .aidlc/tools/aidlc.ts engine workspace codekb-scope-diff --repo <repo> --mint --paths <analyzed paths>
    ```
 
 Then have the architect check the staged timestamp and fix the block until it
@@ -382,7 +382,7 @@ prints `VALID`. If it says the fingerprint does not match the source now, mint
 it again; an unknown fingerprint (outside git) is left for publication to check:
 
    ```
-   {{INVOKE}} engine workspace codekb-scope-diff --repo <repo> --check <record>/.aidlc-engine/codekb-stage-<repo>/reverse-engineering-timestamp.md
+   bun .aidlc/tools/aidlc.ts engine workspace codekb-scope-diff --repo <repo> --check <record>/.aidlc-engine/codekb-stage-<repo>/reverse-engineering-timestamp.md
    ```
 
 At Minimal depth, all nine artifacts and every required section above still
@@ -395,7 +395,7 @@ is the methodology's existing depth contract, not an output-length cap.
 yourself.** Run the read-only tool
 
 ```
-{{INVOKE}} engine workspace codekb --repo <repo>
+bun .aidlc/tools/aidlc.ts engine workspace codekb --repo <repo>
 ```
 
 (omit `--repo` only for an unrecorded project-root repo; pass it for every
@@ -412,7 +412,7 @@ draft per repo; NOT the timestamp filename - record-dir placement checks key on
 the artifact stems) and run, as a command of its own,
 
 ```
-{{INVOKE}} engine workspace codekb-scope-diff --repo <repo> --compare <record>/inception/reverse-engineering/scope-draft-<repo>.md
+bun .aidlc/tools/aidlc.ts engine workspace codekb-scope-diff --repo <repo> --compare <record>/inception/reverse-engineering/scope-draft-<repo>.md
 ```
 
 Keep the output keyed by `<repo>` for Step 5's completion summary. This is the
@@ -428,7 +428,7 @@ Publish the complete candidate through the compare-and-swap utility, using the
 exact snapshot values captured immediately before Step 2:
 
 ```
-bun {{HARNESS_DIR}}/tools/aidlc-utility.ts codekb-publish \
+bun .aidlc/tools/aidlc-utility.ts codekb-publish \
   --repo <repo> \
   --staged <record>/.aidlc-engine/codekb-stage-<repo>/ \
   --paths <snapshot paths> \
@@ -482,7 +482,7 @@ completion sequence in this order:
    step: when it has a question for the person, ask it and end the turn;
    continue once the answer is logged.
 3. Open the approval gate exactly once with
-   `{{INVOKE}} engine orchestrate report --stage reverse-engineering --result awaiting-approval`.
+   `bun .aidlc/tools/aidlc.ts engine orchestrate report --stage reverse-engineering --result awaiting-approval`.
 4. Ask Step 5's approval question.
 
 The person's answer is reported afterwards as `approved` or `rejected`; an

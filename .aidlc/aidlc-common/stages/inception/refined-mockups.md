@@ -75,14 +75,14 @@ Validate design decisions against user stories and requirements for consistency.
 
 ### Step 4: Generate Artifacts
 
-Create mid-to-high fidelity mockups (per user story/screen), interaction specification document (use `{{HARNESS_DIR}}/knowledge/aidlc-design-agent/component-spec-template.md` as the format for component-level specifications), design system mapping, responsive behavior specification, and accessibility compliance checklist.
+Create mid-to-high fidelity mockups (per user story/screen), interaction specification document (use `.aidlc/knowledge/aidlc-design-agent/component-spec-template.md` as the format for component-level specifications), design system mapping, responsive behavior specification, and accessibility compliance checklist.
 
 For non-UI: create API developer experience specification.
 
 ### Step 5: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`{{INVOKE}} engine orchestrate report --stage refined-mockups --result <outcome>`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage refined-mockups --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 ### Step 6: Present Completion & Request Approval

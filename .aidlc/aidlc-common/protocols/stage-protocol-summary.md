@@ -4,7 +4,7 @@ Load this module when the engine lists `summary` in `directive.protocol_modules`
 
 - **Consolidated summary before generation**: The checkpoint below applies only when the step asks for the summary confirmation. When it does not, generate directly from the answers with no confirmation prompt, confirmation entry, or receipt. With it on, after all questions have been
   answered, present a consolidated summary of all answers as unordered bullets (never a numbered list). The person confirms what they can read: the bullets sit in the question itself, or right above it in the same message, as the question-rendering annex shows; never only in a tool's output or a file. Then run
-  `bun {{HARNESS_DIR}}/tools/aidlc-review-brief.ts summary --stage "<directive.stage>" --questions-file "<questions-path>"`;
+  `bun .aidlc/tools/aidlc-review-brief.ts summary --stage "<directive.stage>" --questions-file "<questions-path>"`;
   add `--unit "<directive.unit>"` on a per-unit stage. Print its compact
   decision brief verbatim before presenting this structured question. The brief
   names the stage, the questions file and artifacts being confirmed, and the
@@ -28,13 +28,13 @@ Load this module when the engine lists `summary` in `directive.protocol_modules`
 
   [Answer]:
   ```
-  This confirmation entry is the exception to ordinary file-backed {{OPTION_LETTERS}}/X
+  This confirmation entry is the exception to ordinary file-backed A-E/X
   labels. Fill its tag only after the user responds, storing exactly
   `[Answer]: Looks correct` or `[Answer]: Request changes`. Strip any source
   letter, chat number, punctuation, or option description before writing;
   `[Answer]: A. Looks correct` and `[Answer]: 1. Looks correct` are invalid.
   Before presenting it, record the checkpoint prompt:
-  `{{INVOKE}} engine log decision --stage <slug>
+  `bun .aidlc/tools/aidlc.ts engine log decision --stage <slug>
   --checkpoint summary-confirmation --questions-file "<questions-path>"
   --decision "Does this all look correct before I generate the artifact?"
   --options "Looks correct,Request changes"`; add `--unit "<directive.unit>"`
@@ -44,7 +44,7 @@ Load this module when the engine lists `summary` in `directive.protocol_modules`
   After the person responds, read their reply, write the choice they made to the
   confirmation `[Answer]:` tag (`Looks correct` or `Request changes`), then
   record the human-backed receipt with
-  `{{INVOKE}} engine log answer --stage <slug>
+  `bun .aidlc/tools/aidlc.ts engine log answer --stage <slug>
   --checkpoint summary-confirmation --questions-file "<questions-path>"
   --details "Looks correct"` (or `--details 'Request changes: <what they asked
   to change>'`, single-quoted as below) using the same `--unit` / `--single`

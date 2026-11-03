@@ -87,7 +87,7 @@ the Construction → Operation transition and revisit the owning stage.
 ### Step 6: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`{{INVOKE}} engine orchestrate report --stage ci-pipeline --result <outcome>`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage ci-pipeline --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 ### Step 7: Present Completion & Request Approval

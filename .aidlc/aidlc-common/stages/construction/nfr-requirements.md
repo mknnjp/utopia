@@ -124,7 +124,7 @@ row.
 
 Create
 `<record>/construction/{unit-name}/nfr-requirements/traceability.json` by running
-`{{INVOKE}} engine sensor-traceability --stage nfr-requirements --output-path <that path> --write-upstream`:
+`bun .aidlc/tools/aidlc.ts engine sensor-traceability --stage nfr-requirements --output-path <that path> --write-upstream`:
 it lists every inception `NFR{n}` Requirements Analysis recorded, or, when User Stories
 did not run and `unit-of-work-story-map.md` gives this Unit NFR rows, the NFRs
 on those rows, each with a `GAP` row. Target the derived `NFRx.y` IDs; one that does not apply to this
@@ -145,7 +145,7 @@ Unit is `N/A` in `coverage`, with the reason as its target:
 ### Step 6: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`{{INVOKE}} engine orchestrate report --stage nfr-requirements --result <outcome>`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage nfr-requirements --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 ### Step 7: Completion

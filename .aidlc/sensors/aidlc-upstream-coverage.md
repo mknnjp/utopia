@@ -1,7 +1,7 @@
 ---
 id: upstream-coverage
 kind: deterministic
-command: {{INVOKE}} engine sensor-upstream-coverage
+command: bun .aidlc/tools/aidlc.ts engine sensor-upstream-coverage
 default_severity: advisory
 fire_on: gate
 description: Checks the stage's deliverables reference the upstream artifacts the stage frontmatter declares it requires

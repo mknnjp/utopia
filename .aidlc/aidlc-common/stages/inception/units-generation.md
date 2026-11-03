@@ -137,7 +137,7 @@ NOTE: This artifact describes topology only. It does NOT pick a single "recommen
 - Coverage verification: every enumerated ID assigned, every unit has rows
 
 Create `<record>/inception/units-generation/traceability.json` by running
-`{{INVOKE}} engine sensor-traceability --stage units-generation --output-path <that path> --write-upstream`:
+`bun .aidlc/tools/aidlc.ts engine sensor-traceability --stage units-generation --output-path <that path> --write-upstream`:
 when `stories.md` exists it lists every `USx.y`, otherwise every `FR`
 Requirements Analysis recorded, a requirement with sub-requirements through its `FR{n}.{m}` IDs,
 each with a `GAP` row. Set each row's `status` and `target`: each `OK` target is one Unit ID or construction directory that also appears on
@@ -157,7 +157,7 @@ that ID's row in `unit-of-work-story-map.md`:
 ### Step 6: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`{{INVOKE}} engine orchestrate report --stage units-generation --result <outcome>`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage units-generation --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 ### Step 7: Present Completion & Request Approval

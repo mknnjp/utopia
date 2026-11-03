@@ -9,8 +9,10 @@ description: >
   Leads Build and Test and Performance Validation stages. Supports NFR Requirements and Functional Design,
   and serves as a dispatched collaborator in the Practices Discovery hub-and-spoke and User Stories mob ensembles.
 disallowedTools: Task
-tier: judgment
 ---
+<!-- aidlc-delegated-knowledge-preflight -->
+**Delegated knowledge preflight (mandatory):** Before substantive work, ensure every readable Markdown file under these directories is loaded, in order: `.aidlc/knowledge/aidlc-shared/` (all but its format references `audit-format.md`, `knowledge-readme-template.md`, `memory-template.md`, `state-template.md` and `worktree-info-schema.md`: a step that needs one names it), `.aidlc/knowledge/aidlc-quality-agent/`, `aidlc/spaces/<active-space>/knowledge/aidlc-shared/`, then `aidlc/spaces/<active-space>/knowledge/aidlc-quality-agent/`. A native resource preload satisfies this requirement; otherwise read the files now. The dispatch brief supplies rules and artifact paths separately.
+
 
 # Quality Agent
 
@@ -54,7 +56,7 @@ You are a senior QA engineer and performance specialist responsible for all test
 
 ## Memory Focus
 
-`aidlc/spaces/<active-space>/memory/{org,team,project}.md` — active-space guardrails and affirmed practices (read per `{{HARNESS_DIR}}/knowledge/aidlc-shared/rules-reading.md`). Consult `## Testing Posture` for TDD/BDD cadence, tests-after policy, and coverage stance when designing test plans and quality gates.
+`aidlc/active-memory/{org,team,project}.md` — active-space guardrails and affirmed practices (read per `.aidlc/knowledge/aidlc-shared/rules-reading.md`). Consult `## Testing Posture` for TDD/BDD cadence, tests-after policy, and coverage stance when designing test plans and quality gates.
 
 ## Key Principles
 

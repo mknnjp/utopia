@@ -138,7 +138,7 @@ swarm commands follow the session's active workflow (${ambient.space}/${ambient.
 ## Usage
 
 ```
-{{INVOKE}} engine worktree info --slug <kebab-slug>
+bun .aidlc/tools/aidlc.ts engine worktree info --slug <kebab-slug>
 ```
 
 The slug is the kebab-case Bolt identifier threaded through every worktree command for that Bolt (`create`, `verify`, `merge`, `discard`, `restore`, `purge`). See `SKILL.md` per-Bolt loop "Slug derivation" paragraph for the `name → slug` transformation.
@@ -191,7 +191,7 @@ The retry-then-fail scenario (code-gen fails, user picks Retry, code-gen fails a
 
 ## `list` output
 
-`{{INVOKE}} engine worktree list` reports parsed Bolt directories under the
+`bun .aidlc/tools/aidlc.ts engine worktree list` reports parsed Bolt directories under the
 project's `.aidlc/worktrees/`; it can include multiple intents with the same
 slug. Unparseable directory names are skipped.
 
@@ -246,7 +246,7 @@ must not write both fields.
 
 ## Recoverable discard, restore, and purge
 
-`{{INVOKE}} engine worktree discard --slug <slug>` sets aside the working-tree
+`bun .aidlc/tools/aidlc.ts engine worktree discard --slug <slug>` sets aside the working-tree
 snapshot and reviewed source refs before emitting `WORKTREE_DISCARDED`, then
 removes the live checkout and branch and compare-deletes the original reviewed
 source refs. A temporary Git index and `commit-tree` capture tracked files and
@@ -334,7 +334,7 @@ A result with a snapshot descriptor for
     "route": "worktree",
     "args": ["restore", "--slug", "onboarding-wizard", "--parked", "20260918T123456Z", "--repo", ".", "--intent", "260918-onboarding", "--space", "default"]
   },
-  "restore_hint": "bun {{HARNESS_DIR}}/tools/aidlc-worktree.ts restore --slug onboarding-wizard --parked 20260918T123456Z --repo . --intent 260918-onboarding --space default",
+  "restore_hint": "bun .aidlc/tools/aidlc-worktree.ts restore --slug onboarding-wizard --parked 20260918T123456Z --repo . --intent 260918-onboarding --space default",
   "parked_excludes": ["ignored files", "eol/text=auto normalization"]
 }
 ```
@@ -348,7 +348,7 @@ committed work; there were no uncommitted files to save." For `evidence-only`,
 say: "Nothing of its working files remained to save; only its review evidence
 was kept." Offer restoration only when `restore_operation` is present. On a
 later human restore request, invoke its `worktree` route through
-`{{INVOKE}} engine worktree <args...>`, passing each saved `args` element exactly
+`bun .aidlc/tools/aidlc.ts engine worktree <args...>`, passing each saved `args` element exactly
 as a separate argv argument. Never join the args into a shell command, execute
 `restore_hint`, or reconstruct a slug-only selection. The hint is human display
 text only; a rendering error does not withdraw the restoration offer. Announce
@@ -357,7 +357,7 @@ the returned `worktree_path` plainly.
 ### Restore a set-aside attempt
 
 ```
-{{INVOKE}} engine worktree restore --slug <slug> [--parked <stamp>] [--raw] [--repo <name|.>] [--intent <intent>] [--space <space>]
+bun .aidlc/tools/aidlc.ts engine worktree restore --slug <slug> [--parked <stamp>] [--raw] [--repo <name|.>] [--intent <intent>] [--space <space>]
 ```
 
 Without `--parked`, restore selects the latest parked `/head`, ordering timestamp
@@ -460,7 +460,7 @@ any remaining restore checkout and its reported `branch`.
 ### Purge parked refs
 
 ```
-{{INVOKE}} engine worktree purge --slug <slug> [--parked <stamp> | --older-than <days>] [--repo <name|.>] [--intent <intent>] [--space <space>]
+bun .aidlc/tools/aidlc.ts engine worktree purge --slug <slug> [--parked <stamp> | --older-than <days>] [--repo <name|.>] [--intent <intent>] [--space <space>]
 ```
 
 Purge compare-deletes all parked refs for the selected intent's Bolt, just the
@@ -584,8 +584,8 @@ This fallback is **not currently implemented** — current shipping behaviour as
 
 ## Related files
 
-- Implementation: `{{HARNESS_DIR}}/tools/aidlc-worktree.ts` (`handleInfo` handler)
+- Implementation: `.aidlc/tools/aidlc-worktree.ts` (`handleInfo` handler)
 - Test: `tests/unit/t72-worktree-info.sh`
-- Caller: `{{HARNESS_DIR}}/skills/aidlc/SKILL.md` (per-Bolt-loop halt-and-ask flow)
+- Caller: `.aidlc/skills/aidlc/SKILL.md` (per-Bolt-loop halt-and-ask flow)
 - Audit emitter that produces the `WORKTREE_CREATED` entries `info` reads: `aidlc-worktree.ts` `handleCreate` (also in this file at `~line 154`)
-- Audit-format spec: `{{HARNESS_DIR}}/knowledge/aidlc-shared/audit-format.md` `WORKTREE_CREATED` row
+- Audit-format spec: `.aidlc/knowledge/aidlc-shared/audit-format.md` `WORKTREE_CREATED` row

@@ -1,6 +1,6 @@
 // Status line: Display aidlc workflow position in the terminal status area
 // Registered via statusLine setting in .claude/settings.local.json
-// Invoked via: {{INVOKE}} engine statusline
+// Invoked via: bun .aidlc/tools/aidlc.ts engine statusline
 import {
   existsSync,
   readFileSync,

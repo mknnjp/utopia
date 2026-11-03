@@ -54,7 +54,7 @@ knowledge accumulates across every intent in the space rather than being trapped
 in one intent's record. The agent personas read team knowledge from
 `aidlc/knowledge/aidlc-shared/` and `aidlc/knowledge/<agent>/` if those exist.
 The team creates them; the intent-creation step does not. (The engine's per-agent METHODOLOGY
-knowledge ships separately and read-only under `{{HARNESS_DIR}}/knowledge/`.)
+knowledge ships separately and read-only under `.aidlc/knowledge/`.)
 
 ### Step 3: Ensure Phase Artifact Directories
 

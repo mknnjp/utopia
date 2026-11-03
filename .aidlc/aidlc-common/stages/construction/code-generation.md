@@ -151,7 +151,7 @@ If the plan presented to the user omits test file steps, add them before present
 **Test ordering follows one deterministic Testing Contract.** Run:
 
 ```bash
-bun {{HARNESS_DIR}}/tools/aidlc-testing-posture.ts render
+bun .aidlc/tools/aidlc-testing-posture.ts render
 ```
 
 Paste the command's complete `## Testing Contract` JSON block into `code-generation-plan.md` unchanged, using your file-editing tool: a shell command that rewrites the file (for example PowerShell `Set-Content`) can re-encode its characters, and the block's `contract_sha256` then no longer matches. When the contract is refused, re-run `render` and replace the whole section; never edit the block or its hash by hand. The resolver reads all `## Testing Posture` sections additively and selects the narrowest explicit methodology/order statement; coverage, tooling, integration, or scope notes remain applicable but cannot erase a broader methodology. A contradictory narrower methodology is an error, not an override: halt and ask for the memory rule to be revised.
@@ -238,7 +238,7 @@ When both files from Step 2 are written, run `next`:
   exactly the three choices when your harness has one; otherwise number them
   `1.`, `2.`, `3.`. End the turn.
 - **The answer.** Read the person's reply and record the choice they made:
-  `{{INVOKE}} engine log answer --stage code-generation --checkpoint plan-approval
+  `bun .aidlc/tools/aidlc.ts engine log answer --stage code-generation --checkpoint plan-approval
   --details "Approve Plan"` (or `"Request Changes"`, or `"I'll edit the files"`).
   For a question about several Units, add `--units "<unit>,<unit>"` to record a
   choice for some of them, then record the rest. The person's words are kept
@@ -301,7 +301,7 @@ After approval:
   and the build it issues after it is the approved plan's.
 - The line saying what changed asks whether to go back to the plan the person
   approved (under `strict` it offers that beside the plan question). When they
-  say yes, or ask for it in their own words, run `{{INVOKE}} engine
+  say yes, or ask for it in their own words, run `bun .aidlc/tools/aidlc.ts engine
   testing-posture restore --unit <directive.unit>` (`--stage-level` for
   zero-Unit work), say the line it prints, then run `next`. Never run it
   without their word: it refuses then.
@@ -309,7 +309,7 @@ After approval:
   asks again, on any Guard Policy: the build continues and a `change_notices`
   line names the files. Say it once.
 - When the person asks to review the plan ("review the plan", "let me see the
-  plan first"), record it with `{{INVOKE}} engine log answer --stage
+  plan first"), record it with `bun .aidlc/tools/aidlc.ts engine log answer --stage
   code-generation --checkpoint plan-approval --details "Review the plan"`, and
   the next `next` shows the question before anything else is built. With plan approval off this is how
   they look at one plan; it does not change the setting for later Units. If the
@@ -321,7 +321,7 @@ After approval:
 or the machine switch `AIDLC_DISABLE_PLAN_APPROVAL_GUARD=1` can turn the plan
 stop off for this piece of work; the engine then routes straight to the build
 with the notice above. When the person asks for it, in their own words or with
-`/aidlc --plan-approval off`, run `{{INVOKE}} engine config set guard.plan-approval off --message <id>`, with `<id>` the message they asked in,
+`/aidlc --plan-approval off`, run `bun .aidlc/tools/aidlc.ts engine config set guard.plan-approval off --message <id>`, with `<id>` the message they asked in,
 and say in one line that it is off. When they only ask about it ("skip plan
 approval?"), answer in one line, offer to turn it off for this piece of work, and
 show the plan question again; their yes is the ask. Never suggest turning it off
@@ -338,13 +338,13 @@ Turning it back on (`config set plan-approval on --message <id>`) is fine whenev
 
 If `next` returns an error saying the workspace source cannot be bound, show it
 to the person. The fix is its first remedy: repair the source boundary it names
-(`{{INVOKE}} doctor` names the path; run it yourself), then run `next`. Only when the person asks you to build it
+(`bun .aidlc/tools/aidlc.ts doctor` names the path; run it yourself), then run `next`. Only when the person asks you to build it
 anyway, in their reply to that error (never suggest it), record the break glass: this is the one
 case where you write the approval record yourself. Print the tags (use
 `--stage-level` instead of `--unit` for zero-Unit work):
 
 ```bash
-bun {{HARNESS_DIR}}/tools/aidlc-testing-posture.ts fingerprint --unit "<directive.unit>"
+bun .aidlc/tools/aidlc-testing-posture.ts fingerprint --unit "<directive.unit>"
 ```
 
 Write both tag lines under a `## Plan Approval` heading in
@@ -355,7 +355,7 @@ the only content of `<code-generation-record>/override-reason.txt`. Then record
 the override; the reason travels in that file, never on the command line:
 
 ```bash
-bun {{HARNESS_DIR}}/tools/aidlc-log.ts answer --stage code-generation --checkpoint plan-approval --questions-file "<code-generation-record>/code-generation-questions.md" --details "Approve Plan" --override-file "<code-generation-record>/override-reason.txt" --unit "<directive.unit>"
+bun .aidlc/tools/aidlc-log.ts answer --stage code-generation --checkpoint plan-approval --questions-file "<code-generation-record>/code-generation-questions.md" --details "Approve Plan" --override-file "<code-generation-record>/override-reason.txt" --unit "<directive.unit>"
 ```
 
 Tell the person in one line, in your own words, that their approval to build it with no check of the project's
@@ -378,8 +378,8 @@ or edit the files." Then approve through the protected picker choices. Print the
 fingerprint tags (use `--stage-level` instead of `--unit` for zero-Unit work):
 
 ```bash
-bun {{HARNESS_DIR}}/tools/aidlc-testing-posture.ts fingerprint --unit "<directive.unit>"
-bun {{HARNESS_DIR}}/tools/aidlc-testing-posture.ts fingerprint --stage-level
+bun .aidlc/tools/aidlc-testing-posture.ts fingerprint --unit "<directive.unit>"
+bun .aidlc/tools/aidlc-testing-posture.ts fingerprint --stage-level
 ```
 
 Write both tag lines directly under a `## Plan Approval` heading in
@@ -389,7 +389,7 @@ choices and a blank `[Answer]:`. Record the prompt, then present exactly the two
 those labels into any file:
 
 ```bash
-bun {{HARNESS_DIR}}/tools/aidlc-log.ts decision --stage code-generation --checkpoint plan-approval --questions-file "<code-generation-record>/code-generation-questions.md" --decision "Approve this exact Code Generation plan?" --options "Approve Plan,Request Changes" --unit "<directive.unit>"
+bun .aidlc/tools/aidlc-log.ts decision --stage code-generation --checkpoint plan-approval --questions-file "<code-generation-record>/code-generation-questions.md" --decision "Approve this exact Code Generation plan?" --options "Approve Plan,Request Changes" --unit "<directive.unit>"
 ```
 
 Map the selected label back to `Approve Plan` or `Request Changes`, write it
@@ -397,7 +397,7 @@ after `[Answer]:`, and record it (again `--stage-level` for zero-Unit work). On
 `Request Changes`, revise, blank the answer, and repeat from the fingerprint:
 
 ```bash
-bun {{HARNESS_DIR}}/tools/aidlc-log.ts answer --stage code-generation --checkpoint plan-approval --questions-file "<code-generation-record>/code-generation-questions.md" --details '<exact choice>' --unit "<directive.unit>"
+bun .aidlc/tools/aidlc-log.ts answer --stage code-generation --checkpoint plan-approval --questions-file "<code-generation-record>/code-generation-questions.md" --details '<exact choice>' --unit "<directive.unit>"
 ```
 
 ### Step 4: PART 2 — Generation
@@ -414,7 +414,7 @@ The aidlc-developer-agent persona and its knowledge are loaded automatically by 
 
 Include in the delegation prompt:
 - First, verbatim and unedited, the output of
-  `bun {{HARNESS_DIR}}/tools/aidlc-testing-posture.ts brief --unit
+  `bun .aidlc/tools/aidlc-testing-posture.ts brief --unit
   <directive.unit>` (or `--stage-level` for a zero-Unit directive). Its first
   line is the exact target marker (`AIDLC-UNIT: <directive.unit>` or
   `AIDLC-STAGE: code-generation`), which identifies the target for the
@@ -514,7 +514,7 @@ kept, and the person is told once which files changed outside the units.
 
 When you keep the code in a checkout the review does not otherwise see (a
 worktree in the harness folder, or one outside the project), record it before
-the review with `{{INVOKE}} engine intent add-checkout <its path>`; a Unit names
+the review with `bun .aidlc/tools/aidlc.ts engine intent add-checkout <its path>`; a Unit names
 a checkout outside the project in its manifest by the name that command prints
 (`<label>@checkout/<path>`).
 
@@ -527,7 +527,7 @@ source instead. Its Step 5 files are
 
 Create
 `<code-generation-record>/traceability.json` by running
-`{{INVOKE}} engine sensor-traceability --stage code-generation --output-path <that path> --write-upstream`:
+`bun .aidlc/tools/aidlc.ts engine sensor-traceability --stage code-generation --output-path <that path> --write-upstream`:
 it lists every assigned AC, detailed `NFRx.y`, and `BRx.y` (or direct `FR` /
 `NFR` IDs when incremental scope skipped the design chain), each with a `GAP`
 row; a requirement with sub-requirements is traced through its `FR{n}.{m}` IDs
@@ -563,7 +563,7 @@ is built. For a Unit, the engine refuses the review request until the Step 5
 files exist.
 
 Hand completion to `stage-protocol.md` via
-`{{INVOKE}} engine orchestrate report --stage code-generation --result <outcome>`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage code-generation --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 ### Step 7: Completion

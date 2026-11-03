@@ -219,7 +219,7 @@ bindCreatedIntentToInvokingSession(projectDir, parsed);
 //    legacy tool-file commands and the `aidlc ...` grammar.
 //    aidlc-runtime.ts / aidlc runtime is rejected explicitly (recursion guard
 //    at the command level - a positive-only allowlist would let composites like
-//    `{{INVOKE}} engine runtime compile && {{INVOKE}} engine state approve` through and
+//    `bun .aidlc/tools/aidlc.ts engine runtime compile && bun .aidlc/tools/aidlc.ts engine state approve` through and
 //    loop). aidlc-log.ts emits in-stage events (DECISION_RECORDED,
 //    QUESTION_ANSWERED, REVIEW_REQUESTED, REVIEW_COMPLETED and the like), none
 //    transition-class. aidlc-worktree.ts emits WORKTREE_* and

@@ -98,7 +98,7 @@ Focus areas:
 - Business rules, constraints, and validation logic
 - Data flow and transformations
 - Integration points with other units or external systems
-- Error handling and edge cases (at Standard and Comprehensive depth, sweep each component against `{{HARNESS_DIR}}/knowledge/aidlc-product-agent/corner-checklist.md`; corners the requirements already settled carry forward, and only open corners that need the user's judgement become questions)
+- Error handling and edge cases (at Standard and Comprehensive depth, sweep each component against `.aidlc/knowledge/aidlc-product-agent/corner-checklist.md`; corners the requirements already settled carry forward, and only open corners that need the user's judgement become questions)
 - Frontend Components (component hierarchy, props/state, interaction flows, form validation)
 - Business Scenarios (end-to-end user journeys, happy/unhappy paths, concurrency edge cases)
 
@@ -122,7 +122,7 @@ Generate the following in `<record>/construction/{unit-name}/functional-design/`
 
 Create
 `<record>/construction/{unit-name}/functional-design/traceability.json` by running
-`{{INVOKE}} engine sensor-traceability --stage functional-design --output-path <that path> --write-upstream`:
+`bun .aidlc/tools/aidlc.ts engine sensor-traceability --stage functional-design --output-path <that path> --write-upstream`:
 it lists in `upstream_ids` every ID this Unit answers for, each with a `GAP` row:
 
 - With both `stories.md` and `unit-of-work-story-map.md`: every `ACx.y.z` of
@@ -160,7 +160,7 @@ upstream ID; any unexplained rule is mechanically derived as an orphan:
 ### Step 5: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`{{INVOKE}} engine orchestrate report --stage functional-design --result <outcome>`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage functional-design --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 ### Step 6: Completion

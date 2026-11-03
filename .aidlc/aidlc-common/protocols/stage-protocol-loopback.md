@@ -47,7 +47,7 @@ impact-estimated fix identified):
    Root-cause stage / Planned fix / Estimated impact) to test-results.md and a matching
    Deviations entry to this stage's memory.md.
 2. Execute the jump through the ENGINE: for each unit the diagnosis names,
-   run `bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts next --stage
+   run `bun .aidlc/tools/aidlc-orchestrate.ts next --stage
    code-generation --unit <unit>` and run the command its `print` directive
    names verbatim before the next unit (an `aidlc-jump.ts reopen --target
    code-generation ... --units <unit>` that reopens that unit and moves
@@ -124,7 +124,7 @@ Unit slugs in another intent are not stale siblings, and cleanup refuses a
 branch checked out at a foreign worktree path (surface the owner path rather
 than deleting it).
 Discard parks each attempt; its snapshot remains
-recoverable with `{{INVOKE}} engine worktree restore --slug <slug>` in a
+recoverable with `bun .aidlc/tools/aidlc.ts engine worktree restore --slug <slug>` in a
 separate restored checkout, never as current-attempt evidence. Do not spend a worker turn per unit: after
 `prepare`, run
 `check <unit> --check-cmd "<the project's convergence check>"` on every unit

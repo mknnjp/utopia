@@ -135,7 +135,7 @@ Generate the following in `<record>/construction/{unit-name}/nfr-design/`:
 - **logical-components.md**: Logical infrastructure component inventory — service boundaries, failure domains, blast radius mapping, component isolation strategy, shared resource identification. Bridges NFR design decisions with Infrastructure Design by providing a component-level view of where NFR patterns apply.
 
 Create `<record>/construction/{unit-name}/nfr-design/traceability.json` by running
-`{{INVOKE}} engine sensor-traceability --stage nfr-design --output-path <that path> --write-upstream`:
+`bun .aidlc/tools/aidlc.ts engine sensor-traceability --stage nfr-design --output-path <that path> --write-upstream`:
 it lists every `NFRx.y` from this Unit's NFR requirements (if NFR Requirements did not run, every
 `NFRn` Requirements Analysis recorded), each with a `GAP` row. Map each to the
 concrete design solution:
@@ -155,7 +155,7 @@ concrete design solution:
 ### Step 6: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`{{INVOKE}} engine orchestrate report --stage nfr-design --result <outcome>`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage nfr-design --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 ### Step 7: Completion

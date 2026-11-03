@@ -41,7 +41,7 @@ Runs deterministically inside `aidlc-utility init`. Kept as reference for state-
 
 ### Step 2: Create Full State File
 
-Read the state contract from `{{HARNESS_DIR}}/knowledge/aidlc-shared/state-template.md`.
+Read the state contract from `.aidlc/knowledge/aidlc-shared/state-template.md`.
 Overwrite `<record>/aidlc-state.md` with the full populated version generated
 from the compiled stage graph and scope grid:
 - Project description: persist the exact text in
@@ -49,15 +49,15 @@ from the compiled stage graph and scope grid:
   single-line preview to the state `Project` field
 - Project type (greenfield/brownfield from workspace-detection)
 - Workspace state (languages, frameworks, build system from workspace-detection)
-- Start date: the time `{{INVOKE}} engine now` prints
+- Start date: the time `bun .aidlc/tools/aidlc.ts engine now` prints
 - Scope configuration (stages to execute/skip per scope routing)
 - Full stage progress checkboxes (all stages, with INITIALIZATION stages marked [x] for workspace-scaffold, workspace-detection)
 - Mark state-init as `[-]` in progress
 - Total Stages: count EXECUTE stages only (not SKIP). Authoritative counts come
-  from the compiled scope grid (`{{HARNESS_DIR}}/tools/data/scope-grid.json`),
+  from the compiled scope grid (`.aidlc/tools/data/scope-grid.json`),
   transposed from each stage's `scopes:` frontmatter. Run
-  `{{INVOKE}} engine gen scope-table` for the live scope
-  counts and `{{INVOKE}} engine gen stage-table` for the
+  `bun .aidlc/tools/aidlc.ts engine gen scope-table` for the live scope
+  counts and `bun .aidlc/tools/aidlc.ts engine gen stage-table` for the
   live compiled stage list.
 - Completed: set to number of completed INITIALIZATION stages (typically 3)
 - In Progress: set to first post-initialization stage name

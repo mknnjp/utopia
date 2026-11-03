@@ -12,7 +12,7 @@ A `run-stage` with `construction_checkpoint` carries `kind` (`unit` or
 display label. Use the exact Unit and kind the engine emitted:
 
 ```bash
-{{INVOKE}} engine bolt checkpoint --action status --unit "<unit>" --kind <unit|skeleton>
+bun .aidlc/tools/aidlc.ts engine bolt checkpoint --action status --unit "<unit>" --kind <unit|skeleton>
 ```
 
 `verify` runs the intent's recorded, human-authorized **Construction Verification
@@ -44,7 +44,7 @@ command finds the session it runs in by itself, so pass no session and never
 look one up:
 
 ```bash
-{{INVOKE}} engine log decision --stage "<directive.stage>" --checkpoint verification-command --command-file verification-command.txt --decision "Use this command to verify each completed Unit?" --options "Approve,Request Changes"
+bun .aidlc/tools/aidlc.ts engine log decision --stage "<directive.stage>" --checkpoint verification-command --command-file verification-command.txt --decision "Use this command to verify each completed Unit?" --options "Approve,Request Changes"
 ```
 
 Render this structured question through the harness's question binding. Copy the
@@ -72,8 +72,8 @@ asked, and a reply to another question does not count. When they
 approve, record their answer, and set the command:
 
 ```bash
-{{INVOKE}} engine log answer --stage "<directive.stage>" --checkpoint verification-command --command-file verification-command.txt --details "Approve"
-{{INVOKE}} engine state set-construction-verification-command --command-file verification-command.txt
+bun .aidlc/tools/aidlc.ts engine log answer --stage "<directive.stage>" --checkpoint verification-command --command-file verification-command.txt --details "Approve"
+bun .aidlc/tools/aidlc.ts engine state set-construction-verification-command --command-file verification-command.txt
 ```
 
 For **Request Changes**, record the same `log answer` with
@@ -91,7 +91,7 @@ When the new directive confirms `command_authorized: true`, verify with the
 recorded command:
 
 ```bash
-{{INVOKE}} engine bolt checkpoint --action verify --unit "<unit>" --kind <unit|skeleton>
+bun .aidlc/tools/aidlc.ts engine bolt checkpoint --action verify --unit "<unit>" --kind <unit|skeleton>
 ```
 
 The verifier stores proof bound to the current artifacts, source, attempt, and
@@ -177,7 +177,7 @@ authorized command digest. The command finds the session it runs in by itself,
 so pass no session and never look one up:
 
 ```bash
-{{INVOKE}} engine bolt checkpoint --action ask --unit "<unit>" --kind <unit|skeleton>
+bun .aidlc/tools/aidlc.ts engine bolt checkpoint --action ask --unit "<unit>" --kind <unit|skeleton>
 ```
 
 When `ask` returns `earlier_reply`, the person already answered in this chat
@@ -206,7 +206,7 @@ to be redone, so the line is instead "<unit>'s design was redone and its review
 says <verdict>. Approve it?" ("code" in place of "design" when
 `rechecked.changed` is code). On a `NOT-READY` verdict, print the Review brief
 first, as the reviewer module asks after a recovery verdict:
-`bun {{HARNESS_DIR}}/tools/aidlc-review-brief.ts review --stage "<directive.stage>" --unit "<unit>" --why stale`.
+`bun .aidlc/tools/aidlc-review-brief.ts review --stage "<directive.stage>" --unit "<unit>" --why stale`.
 The human's reply to this checkpoint question, in this chat or a new one,
 authorizes the action you read from it: approve, or reject with what they asked
 to change (their words are kept with the record; add `--reason` when you want to
@@ -227,11 +227,11 @@ question-and-answer flow.
 
 ```bash
 # Only after the human chose Approve:
-{{INVOKE}} engine bolt checkpoint --action approve --unit "<unit>" --kind <unit|skeleton> --user-input 'Approve'
+bun .aidlc/tools/aidlc.ts engine bolt checkpoint --action approve --unit "<unit>" --kind <unit|skeleton> --user-input 'Approve'
 # Automatic approval: verified ordinary Unit and human_required: false only.
-{{INVOKE}} engine bolt checkpoint --action approve --unit "<unit>" --kind unit
+bun .aidlc/tools/aidlc.ts engine bolt checkpoint --action approve --unit "<unit>" --kind unit
 # Only after the human chose Request Changes and supplied feedback:
-{{INVOKE}} engine bolt checkpoint --action reject --unit "<unit>" --kind <unit|skeleton> --user-input 'Request Changes' --reason '<human feedback>'
+bun .aidlc/tools/aidlc.ts engine bolt checkpoint --action reject --unit "<unit>" --kind <unit|skeleton> --user-input 'Request Changes' --reason '<human feedback>'
 ```
 
 After approval or rejection, re-run `next`. Never use a checkpoint approval as

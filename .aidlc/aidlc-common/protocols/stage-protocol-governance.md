@@ -17,7 +17,7 @@ At each phase transition (Ideation→Inception (approval-handoff→reverse-engin
 - On demand if the user requests verification via `/aidlc --status`
 
 ### Verification process
-1. Read the verification methodology from `{{HARNESS_DIR}}/knowledge/aidlc-shared/verification.md`
+1. Read the verification methodology from `.aidlc/knowledge/aidlc-shared/verification.md`
 2. Run the phase-specific traceability checks
 3. Write results to `<record>/verification/[phase-boundary]-verification.md`
 4. If verification fails, present issues to the user before proceeding:

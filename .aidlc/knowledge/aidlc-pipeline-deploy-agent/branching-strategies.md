@@ -34,7 +34,7 @@ main ─────────────────────────
 - Teams with infrequent releases find it hard to "hold" features for a release window. Feature flags are the answer, not branches.
 - Teams without good test coverage shouldn't trunk-base — every commit hits production-shaped pipelines, so flaky tests block everyone.
 
-**Worktree mapping.** Create: `{{INVOKE}} engine worktree create --slug <bolt-slug> --base main`. Merge: `--target main --strategy squash`. Each Bolt = one squash commit on `main`.
+**Worktree mapping.** Create: `bun .aidlc/tools/aidlc.ts engine worktree create --slug <bolt-slug> --base main`. Merge: `--target main --strategy squash`. Each Bolt = one squash commit on `main`.
 
 **Parallel Bolts.** Cleanest fit. Multiple Bolts can be in flight simultaneously; each branches from current `main`, each merges back without rebase contention because squash flattens history at merge time.
 
@@ -44,8 +44,8 @@ When dispatched for trunk-based:
 
 1. Read `## Way of Working` from the active space's `project.md`, `team.md`, then `org.md` per `shared/rules-reading.md`; use hardcoded defaults only if all three are empty.
 2. Resolve flags: `--base main --target main --strategy squash` for the default; deviate only if `team.md` explicitly says otherwise.
-3. **Create**: invoke `{{INVOKE}} engine worktree create --slug <bolt-slug> --base main`.
-4. **Merge** (after Bolt gate approval): caller must be on `main` at the main checkout. Invoke `{{INVOKE}} engine worktree merge --slug <bolt-slug> --target main --strategy squash --message "<commit message>"`.
+3. **Create**: invoke `bun .aidlc/tools/aidlc.ts engine worktree create --slug <bolt-slug> --base main`.
+4. **Merge** (after Bolt gate approval): caller must be on `main` at the main checkout. Invoke `bun .aidlc/tools/aidlc.ts engine worktree merge --slug <bolt-slug> --target main --strategy squash --message "<commit message>"`.
 5. Return the JSON envelope per § Response contract back to the orchestrator.
 
 ### Failure modes
@@ -84,8 +84,8 @@ When dispatched for GitHub Flow:
 
 1. Read `## Way of Working` from the active space's `project.md`, `team.md`, then `org.md` (including any merge-style statement). The merge-strategy choice (squash vs merge) is what differs from trunk-based.
 2. Resolve flags: `--base main --target main --strategy <squash|merge>` per affirmation; default to `squash`.
-3. **Create**: `{{INVOKE}} engine worktree create --slug <bolt-slug> --base main`.
-4. **Merge**: `{{INVOKE}} engine worktree merge --slug <bolt-slug> --target main --strategy <squash|merge> [--message "<msg>"]`. With `--strategy merge`, a no-fast-forward merge commit preserves the bolt branch's individual commits.
+3. **Create**: `bun .aidlc/tools/aidlc.ts engine worktree create --slug <bolt-slug> --base main`.
+4. **Merge**: `bun .aidlc/tools/aidlc.ts engine worktree merge --slug <bolt-slug> --target main --strategy <squash|merge> [--message "<msg>"]`. With `--strategy merge`, a no-fast-forward merge commit preserves the bolt branch's individual commits.
 5. Return per § Response contract.
 
 ### Failure modes
@@ -127,8 +127,8 @@ When dispatched for GitFlow:
 1. Read the active space's `## Way of Working`. Look for the integration-branch name (`develop` is the convention; teams sometimes use `integration` or `next`).
 2. For feature Bolts: `--base <integration> --target <integration> --strategy <merge|squash>`. Default to `merge`.
 3. For hotfix Bolts (rare in Construction; usually triggered by an out-of-band stage): `--base main --target main --strategy merge`. The operator separately merges the hotfix back to `<integration>` after `aidlc-worktree merge` succeeds. Out of scope for the tool.
-4. **Create**: `{{INVOKE}} engine worktree create --slug <bolt-slug> --base <integration>`.
-5. **Merge**: caller must be on `<integration>` at the main checkout. `{{INVOKE}} engine worktree merge --slug <bolt-slug> --target <integration> --strategy <merge|squash>`.
+4. **Create**: `bun .aidlc/tools/aidlc.ts engine worktree create --slug <bolt-slug> --base <integration>`.
+5. **Merge**: caller must be on `<integration>` at the main checkout. `bun .aidlc/tools/aidlc.ts engine worktree merge --slug <bolt-slug> --target <integration> --strategy <merge|squash>`.
 6. Return per § Response contract; if hotfix, include `notes: "manual merge to <integration> required"` so the orchestrator surfaces the follow-up.
 
 ### Failure modes
@@ -170,8 +170,8 @@ When dispatched for Release Branches:
 
 1. Read the active space's `## Way of Working`. Look for the release-branch pattern (`release/vX.Y` is the convention).
 2. Determine which line the Bolt belongs to from the Bolt's metadata (the orchestrator passes a `target_line: main | release/vX.Y` hint). Default to `main` when ambiguous.
-3. **Create**: `{{INVOKE}} engine worktree create --slug <bolt-slug> --base <line>`.
-4. **Merge**: caller on `<line>` at the main checkout. `{{INVOKE}} engine worktree merge --slug <bolt-slug> --target <line> --strategy merge`.
+3. **Create**: `bun .aidlc/tools/aidlc.ts engine worktree create --slug <bolt-slug> --base <line>`.
+4. **Merge**: caller on `<line>` at the main checkout. `bun .aidlc/tools/aidlc.ts engine worktree merge --slug <bolt-slug> --target <line> --strategy merge`.
 5. If the Bolt was a release-branch fix, include `notes: "consider cherry-pick to main"` in the response — the operator handles the cross-merge.
 6. Return per § Response contract.
 
@@ -388,14 +388,14 @@ work; there were no uncommitted files to save." For evidence-only mode, say:
 "Nothing of its working files remained to save; only its review evidence was
 kept." Omit the final restoration offer only when `restore_operation` is absent.
 On a later human restore request, invoke its `worktree` route through
-`{{INVOKE}} engine worktree <args...>`, passing each saved arg exactly as a
+`bun .aidlc/tools/aidlc.ts engine worktree <args...>`, passing each saved arg exactly as a
 separate argv argument. Never join args into a shell command, execute the
 display-only hint, or rebuild a slug-only selection. A rendering error does not
 withdraw the restoration offer. Announce the returned `worktree_path` plainly.
 
 ### Restore or purge set-aside work
 
-`{{INVOKE}} engine worktree restore --slug <bolt-slug> [--parked <stamp>]
+`bun .aidlc/tools/aidlc.ts engine worktree restore --slug <bolt-slug> [--parked <stamp>]
 [--raw] [--repo <name|.>] [--intent <intent>] [--space <space>]` restores the selected
 attempt, or the latest parked `/head` when `--parked` is omitted. Stamps use UTC
 `YYYYMMDDTHHMMSSZ` with optional numeric `-N` collision suffixes; latest selection
@@ -443,7 +443,7 @@ unset) cannot currently be parked; discard refuses before teardown with:
 cannot park file with a non-UTF-8 name and a content-transforming attribute (<attr>=<value>): <name>; rename the file or unset its <attr> attribute
 ```
 
-`{{INVOKE}} engine worktree purge --slug <bolt-slug> [--parked <stamp> |
+`bun .aidlc/tools/aidlc.ts engine worktree purge --slug <bolt-slug> [--parked <stamp> |
 --older-than <days>] [--repo <name|.>] [--intent <intent>] [--space <space>]`
 compare-deletes all matching parked refs. With no selector it removes every stamp
 for the selected intent's Bolt; `--parked` selects one exact stamp.

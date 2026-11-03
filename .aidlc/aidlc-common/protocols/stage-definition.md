@@ -1,13 +1,13 @@
 # Stage Definition Format
 
 This file is the authoritative contract for the shape of every stage file
-under `{{HARNESS_DIR}}/aidlc-common/stages/`. The schema (`stage-schema.ts`), the
+under `.aidlc/aidlc-common/stages/`. The schema (`stage-schema.ts`), the
 YAML parser (`parseStageFrontmatter` in `lib.ts`), and the YAML stage
 files all implement against this document.
 
 YAML frontmatter at the top of every stage `.md` is authoritative. The
-build step `{{INVOKE}} engine graph compile` regenerates
-`{{HARNESS_DIR}}/tools/data/stage-graph.json` from the YAML sources; the runtime
+build step `bun .aidlc/tools/aidlc.ts engine graph compile` regenerates
+`.aidlc/tools/data/stage-graph.json` from the YAML sources; the runtime
 reads the compiled JSON via the unchanged `loadStageGraph()` API at
 `lib.ts:282-289`. The CI drift check `aidlc-graph compile --check` fails
 the build if the JSON diverges from the YAML.
@@ -48,7 +48,7 @@ copies this table verbatim.
 | `phase` | string | yes | `initialization` \| `ideation` \| `inception` \| `construction` \| `operation` (lowercase) |
 | `execution` | string | yes | `ALWAYS` \| `CONDITIONAL` |
 | `condition` | string | yes | free-form; describe always-on rationale for `ALWAYS`, branching condition for `CONDITIONAL` |
-| `lead_agent` | string | yes | agent slug; validated dynamically against `{{HARNESS_DIR}}/agents/*.md` via `loadAgents()` — no hardcoded enum |
+| `lead_agent` | string | yes | agent slug; validated dynamically against `.aidlc/agents/*.md` via `loadAgents()` — no hardcoded enum |
 | `support_agents` | string[] | yes | empty list allowed; each entry a valid agent slug. For `mode: pipeline`, every entry across `lead_agent` plus `support_agents` must be unique so each ordered receipt position has one identity. Renamed from prose `Supporting Agents:` (format-only rename) |
 | `mode` | string | yes | `inline` \| `subagent` \| `pipeline` \| `mob` \| `agent-team`. The stage's **communication topology**: who talks to whom while the body runs. `inline` (conductor adopts every voice, zero dispatches), `subagent` (hub-and-spoke: the conductor dispatches the lead for the draft, then each `support_agents[]` entry as a real, mutually-blind spoke, then the lead to integrate), `pipeline` (chain: the links collectively author the artifacts, each link seeing all upstream work and advancing the work product directly; after every return the conductor mints `PIPELINE_LINK_COMPLETED`, and the last link leaves the artifacts complete), and `mob` (mesh: one room, cross-talk, dissent recorded; judgment-call objections surface to the human mid-stage) are active; `pipeline`/`mob` require non-empty `support_agents`. Writing model: each dispatched support agent writes its own contribution file (`contributions/<agent-slug>.md`, stage-protocol-collaborators.md); the lead alone edits the stage's `produces[]` artifacts except that serialized pipeline links advance them directly. On `mob`/`subagent`-with-supports stages contribution files are completion evidence; on `pipeline`, the complete ordered current-attempt receipt chain is completion evidence. **`agent-team` is reserved**: the future native-bus transport for mesh collaboration (`mob` is the portable mode); no stage declares it until a consumer ships. Orchestrator code reading `mode` MUST handle `agent-team` explicitly (at minimum throw "not yet implemented"); do not fall through to a default path. The review loop is NOT a mode: `reviewer` + `reviewer_max_iterations` deliver the two-party critique topology on every mode (stage-protocol-reviewer.md §12a) |
 | `reviewer` | string | optional | agent slug; invoked after artifact production and before the approval gate |
@@ -65,7 +65,7 @@ copies this table verbatim.
 | `consumes[].conditional_on` | string | optional | `brownfield` \| `greenfield`. Omit for unconditional consumes — no `always` value |
 | `consumes[].cited` | boolean | optional | `true`: the deliverables cite this input whenever it exists, and the `upstream-coverage` check reads it beside the required consumes. The compile lists these consumes as the stage's `cites`, outside the compiled `consumes`, so marking one changes no finished stage's record |
 | `requires_stage` | string[] | yes | empty allowed; each entry a known stage slug. Two roles: (1) semantic data dependency; (2) presentation-order edge for stages with no semantic link but a fixed display order. Primary input to computed `display_order` |
-| `scopes` | string[] | optional | each entry a scope name with a matching `{{HARNESS_DIR}}/scopes/aidlc-<name>.md` file. Naming a scope marks this stage EXECUTE under that scope; absence marks it SKIP. The per-stage transpose of the scope membership matrix — `aidlc-graph compile` reads every stage's `scopes:` and emits the compiled EXECUTE/SKIP grid (`tools/data/scope-grid.json`). The 3 initialization stages name all scopes (always EXECUTE). Absent and `[]` are treated identically |
+| `scopes` | string[] | optional | each entry a scope name with a matching `.aidlc/scopes/aidlc-<name>.md` file. Naming a scope marks this stage EXECUTE under that scope; absence marks it SKIP. The per-stage transpose of the scope membership matrix — `aidlc-graph compile` reads every stage's `scopes:` and emits the compiled EXECUTE/SKIP grid (`tools/data/scope-grid.json`). The 3 initialization stages name all scopes (always EXECUTE). Absent and `[]` are treated identically |
 | `ars` | object | optional | Composer screening prior for a stage the shipped `tools/data/ars-priors.json` does not name (plugin stages): `targets` (list of ARS component symbols `iae` \| `csu` \| `ve` \| `r` \| `ua`; empty allowed), `cost` (integer `1`..`5`, or `null` for a stage that is never numerically screened), optional `role` (`initialization` \| `core` \| `phase-gate` \| `structural`) and optional `project_types` (non-empty subset of `brownfield` \| `greenfield`, mirroring a `condition:` that restricts the stage to one kind of project) — the same four facts as one priors-file entry. Compiled into the stage node verbatim; `aidlc-graph ars` reads it when the priors file has no entry for the slug (the file wins when both exist). A stage with neither lands as a `no-prior` row — not screenable |
 | `inputs` | string | yes | human prose (preserves today's `**Inputs**:` line) |
 | `outputs` | string | yes | human prose (preserves today's `**Outputs**:` line). **Non-load-bearing at runtime** — the engine NEVER reads `outputs:` for path resolution; it resolves the node's `produces[]` artifact NAMES against the **active intent's record dir** at emit time (see "Artifact paths are engine-resolved" below). Author `outputs:` as relative artifact NAMES (or `<phase>/<stage>/<name>.md` shapes); do NOT hardcode a workspace root (`aidlc-docs/…` or `aidlc/spaces/…`) — it would read FALSE the moment the record re-roots per intent |
@@ -179,7 +179,7 @@ future releases will populate.
 ## Compile + drift invariant
 
 `aidlc-graph compile` reads all stage YAML sources and regenerates
-`{{HARNESS_DIR}}/tools/data/stage-graph.json`. Consumers continue to read the compiled
+`.aidlc/tools/data/stage-graph.json`. Consumers continue to read the compiled
 JSON via `loadStageGraph()`.
 
 `aidlc-graph compile --check` re-runs the compile in memory, diffs against

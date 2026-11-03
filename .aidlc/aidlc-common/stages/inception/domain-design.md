@@ -157,7 +157,7 @@ Number ADRs sequentially (`ADR-001`, `ADR-002`, …). Where a decision came from
 ### Step 6: Record Traceability
 
 Create `<record>/inception/domain-design/traceability.json` by running
-`{{INVOKE}} engine sensor-traceability --stage domain-design --output-path <that path> --write-upstream`:
+`bun .aidlc/tools/aidlc.ts engine sensor-traceability --stage domain-design --output-path <that path> --write-upstream`:
 when `stories.md` exists it lists every `USx.y`, otherwise every `FR`
 Requirements Analysis recorded (a requirement with sub-requirements is traced through its `FR{n}.{m}` IDs and needs no row of its own), each with a `GAP` row. Map each upstream ID to the **component or entity**
 in `components.md` that realizes it — those are the only identifiers this
@@ -179,7 +179,7 @@ Functional Design):
 ### Step 7: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`{{INVOKE}} engine orchestrate report --stage domain-design --result <outcome>`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage domain-design --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 ### Step 8: Present Completion & Request Approval
@@ -194,7 +194,7 @@ Use stage-protocol.md completion template with completion emoji: :building_const
   - Approve, and add Units Generation next (if it was skipped in execution plan)
 
 If they pick "Approve, and add Units Generation next", run
-`{{INVOKE}} engine orchestrate next --add units-generation` and follow its
+`bun .aidlc/tools/aidlc.ts engine orchestrate next --add units-generation` and follow its
 step, which names the report that records their approval; Units Generation
 runs next. If they only ask to add Units Generation, run the same
 `next --add units-generation`, say in one line that it is on the plan, and ask

@@ -21,7 +21,7 @@ work through one command, at any stage.
 ## 2. The command
 
 ```
-{{INVOKE}} engine intent add-repo <name> --reason "<why this work changes it>"
+bun .aidlc/tools/aidlc.ts engine intent add-repo <name> --reason "<why this work changes it>"
 ```
 
 - `<name>` is the repo's folder name beside the other repos.

@@ -165,7 +165,7 @@ stage before Construction begins.
 ### Step 6: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`{{INVOKE}} engine orchestrate report --stage delivery-planning --result <outcome>`.
+`bun .aidlc/tools/aidlc.ts engine orchestrate report --stage delivery-planning --result <outcome>`.
 That `report` call owns every lifecycle transition and advancement; never perform one in prose, and never narrate this bookkeeping to the user.
 
 **Construction iteration.** Read the recorded choice before you recommend
@@ -175,7 +175,7 @@ each Unit's applicable design stages and Code Generation run serially, followed
 by its verified completion checkpoint.
 An explicit stage-major choice remains valid. To enable later Code Generation
 batches, obtain the human's execution choice, set iteration to stage-major, then
-run `{{INVOKE}} engine state set-construction-execution swarm`. This works with
+run `bun .aidlc/tools/aidlc.ts engine state set-construction-execution swarm`. This works with
 either gated or autonomous completion approval; the autonomy answer never changes
 execution order. Unit-major stays serial and refuses a contradictory swarm
 setting; select serial before returning to unit-major. For checkpoint-enabled work,
@@ -184,7 +184,7 @@ later Units, under either iteration order.
 
 Preserve an existing explicit choice. When the person asks to change the order
 ("let's do each stage for both units together first"), run
-`{{INVOKE}} engine state set-construction-iteration <unit-major|stage-major>` in
+`bun .aidlc/tools/aidlc.ts engine state set-construction-iteration <unit-major|stage-major>` in
 that turn and say its `notice` line word for word; do not ask them to confirm it.
 Do not silently migrate a legacy workflow: without the checkpoint field it keeps
 its prior first-stage review, and its late stage approvals come as one question.
@@ -230,7 +230,7 @@ below; the command finds the session it runs in by itself, so pass no session
 and never look one up:
 
 ```bash
-{{INVOKE}} engine log decision --stage "<directive.stage>" --checkpoint verification-command --command-file verification-command.txt --decision "Use this command to verify each completed Unit?" --options "Approve,Request Changes"
+bun .aidlc/tools/aidlc.ts engine log decision --stage "<directive.stage>" --checkpoint verification-command --command-file verification-command.txt --decision "Use this command to verify each completed Unit?" --options "Approve,Request Changes"
 ```
 
 Copy the complete canonical command exactly from the `command` field in the
@@ -258,8 +258,8 @@ approve, record their answer, and set the command with the matching tool-owned
 receipt:
 
 ```bash
-{{INVOKE}} engine log answer --stage "<directive.stage>" --checkpoint verification-command --command-file verification-command.txt --details "Approve"
-{{INVOKE}} engine state set-construction-verification-command --command-file verification-command.txt
+bun .aidlc/tools/aidlc.ts engine log answer --stage "<directive.stage>" --checkpoint verification-command --command-file verification-command.txt --details "Approve"
+bun .aidlc/tools/aidlc.ts engine state set-construction-verification-command --command-file verification-command.txt
 ```
 
 For **Request Changes**, record the same `log answer` with

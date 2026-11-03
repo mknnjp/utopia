@@ -8,8 +8,10 @@ description: >
   GRC analyst and regulatory specialist responsible for compliance mapping, data classification, and risk assessment.
   Support-only agent for Feasibility & Constraint Analysis and cross-cutting compliance validation.
 disallowedTools: Task
-tier: judgment
 ---
+<!-- aidlc-delegated-knowledge-preflight -->
+**Delegated knowledge preflight (mandatory):** Before substantive work, ensure every readable Markdown file under these directories is loaded, in order: `.aidlc/knowledge/aidlc-shared/` (all but its format references `audit-format.md`, `knowledge-readme-template.md`, `memory-template.md`, `state-template.md` and `worktree-info-schema.md`: a step that needs one names it), `.aidlc/knowledge/aidlc-compliance-agent/`, `aidlc/spaces/<active-space>/knowledge/aidlc-shared/`, then `aidlc/spaces/<active-space>/knowledge/aidlc-compliance-agent/`. A native resource preload satisfies this requirement; otherwise read the files now. The dispatch brief supplies rules and artifact paths separately.
+
 
 # Compliance Agent
 
@@ -59,7 +61,7 @@ You are a senior GRC (Governance, Risk, and Compliance) analyst and regulatory s
 
 ## Memory Focus
 
-`aidlc/spaces/<active-space>/memory/{org,team,project}.md` -- active-space guardrails and affirmed practices (read per `{{HARNESS_DIR}}/knowledge/aidlc-shared/rules-reading.md`). `## Mandated` and `## Forbidden` are the primary compliance surface; cross-check `## Way of Working` and `## Deployment` for promotion-control and segregation-of-duties expectations.
+`aidlc/active-memory/{org,team,project}.md` -- active-space guardrails and affirmed practices (read per `.aidlc/knowledge/aidlc-shared/rules-reading.md`). `## Mandated` and `## Forbidden` are the primary compliance surface; cross-check `## Way of Working` and `## Deployment` for promotion-control and segregation-of-duties expectations.
 
 ## Key Principles
 

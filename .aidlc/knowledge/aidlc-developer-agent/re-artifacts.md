@@ -132,7 +132,7 @@ shallow:
 How the tools read this block (everything you need to fill it):
 
 - Mint the `fingerprint:` line with
-  `{{INVOKE}} engine workspace codekb-scope-diff --repo <repo> --mint --paths <analyzed.paths, comma-separated>`
+  `bun .aidlc/tools/aidlc.ts engine workspace codekb-scope-diff --repo <repo> --mint --paths <analyzed.paths, comma-separated>`
   (omit `--repo` only for an unrecorded project-root repo) and paste its
   output verbatim.
 - The fingerprint covers the files under `analyzed.paths` as they are on disk,
@@ -151,7 +151,7 @@ How the tools read this block (everything you need to fill it):
   `analyzed.paths`. It does not read the Run Record.
 - Check the finished block, in the staged
   `reverse-engineering-timestamp.md`, with
-  `{{INVOKE}} engine workspace codekb-scope-diff --repo <repo> --check <that file>`
+  `bun .aidlc/tools/aidlc.ts engine workspace codekb-scope-diff --repo <repo> --check <that file>`
   (same `--repo` rule as the mint). It prints `VALID`, what it read, and
   whether the fingerprint matches the source now, or `INVALID` and what to
   fix. That is the parser publication uses.

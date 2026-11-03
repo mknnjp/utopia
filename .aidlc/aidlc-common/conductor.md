@@ -39,7 +39,7 @@ stage that does not apply reports
 
 ## Asking good questions
 
-- Ordinary questions go in markdown files using `[Answer]:` tags with {{OPTION_LETTERS}} + X
+- Ordinary questions go in markdown files using `[Answer]:` tags with A-E + X
   (Other); the consolidated-summary checkpoint is the unlettered exception
   options — the file is always the source of truth. Use a structured question for
   1-3 simple options where the structured UI is clearer (rendering per the harness question-rendering annex).
@@ -64,11 +64,11 @@ Only when `directive.protocol_modules` lists `learnings` and `directive.single !
 directive carries (`<record>/<phase>/<stage>/memory.md`). Otherwise keep no diary and run no learnings ritual. When enabled:
 
 1. The engine creates `memory.md` from
-   `{{HARNESS_DIR}}/knowledge/aidlc-shared/memory-template.md` when it emits the
+   `.aidlc/knowledge/aidlc-shared/memory-template.md` when it emits the
    directive. NEVER probe for `memory.md`, or any other maybe-absent file, with a
    read tool: reading an absent path is a failed tool call. In the rare case an
    append finds the diary missing, create it with your file-write tool, writing
-   the text of `{{HARNESS_DIR}}/knowledge/aidlc-shared/memory-template.md` to
+   the text of `.aidlc/knowledge/aidlc-shared/memory-template.md` to
    `<memory_path>` (the write tool creates the folder). Never overwrite an
    existing diary; re-entry or resume must keep accumulated entries.
 2. During the stage, append timestamped bullets under the matching canonical
@@ -146,7 +146,7 @@ The `PRACTICES_OVERRIDE` judgement is preserved and is yours to make: if
 `bolt-plan.md` carries a walking-skeleton marker on a Bolt but the team
 practices say skeleton-off for the current scope, **practices wins** — classify
 the stance from practices (not the marker) and emit a `PRACTICES_OVERRIDE` row
-via `{{INVOKE}} engine state practices-event --type override` before
+via `bun .aidlc/tools/aidlc.ts engine state practices-event --type override` before
 reporting the stance. Practices is the team's standing voice; the bolt-plan
 marker is one workflow's interpretation.
 

@@ -12,8 +12,10 @@ description: >
   or not ready.
   Dispatched by the /aidlc orchestrator; never invoked directly by a stage.
 disallowedTools: Task
-tier: judgment
 ---
+<!-- aidlc-delegated-knowledge-preflight -->
+**Delegated knowledge preflight (mandatory):** Before substantive work, ensure every readable Markdown file under these directories is loaded, in order: `.aidlc/knowledge/aidlc-shared/` (all but its format references `audit-format.md`, `knowledge-readme-template.md`, `memory-template.md`, `state-template.md` and `worktree-info-schema.md`: a step that needs one names it), `.aidlc/knowledge/aidlc-composer-agent/`, `aidlc/spaces/<active-space>/knowledge/aidlc-shared/`, then `aidlc/spaces/<active-space>/knowledge/aidlc-composer-agent/`. A native resource preload satisfies this requirement; otherwise read the files now. The dispatch brief supplies rules and artifact paths separately.
+
 
 # Composer Agent
 
@@ -82,7 +84,7 @@ START deciding. Target: complete in ≤ 4 tool calls when CodeKB is present.
 
 ### Step 1: Detect Workspace
 
-Run `{{INVOKE}} engine workspace detect --json`. Returns workspace scan
+Run `bun .aidlc/tools/aidlc.ts engine workspace detect --json`. Returns workspace scan
 (projectType, languages, frameworks, buildSystem), the resolved `scopesDir`
 + `scopeGridPath`, and `proposalPath`. You read the first two, and
 you never write a scope file. The only file you write is `proposalPath`, the
@@ -167,7 +169,7 @@ Do NOT compute the composite, bands, or any downstream number yourself. Score
 the five components with cited evidence, then run:
 
 ```
-{{INVOKE}} engine graph ars --iae <s> --csu <s> --ve <s> --r <s> --ua <s> --method <codekb|fallback> [--completed <csv>] [--project-type <t>]
+bun .aidlc/tools/aidlc.ts engine graph ars --iae <s> --csu <s> --ve <s> --r <s> --ua <s> --method <codekb|fallback> [--completed <csv>] [--project-type <t>]
 ```
 
 and copy its numbers verbatim. The tool owns the weighted composite, the band
@@ -576,7 +578,7 @@ Write your ARS-derived grid to the `proposalPath` Step 1 printed, replacing
 whatever an earlier run left there. Never use a system temp directory: some
 harnesses' file tools cannot write outside the project. Then run:
 ```
-{{INVOKE}} engine graph validate-grid --project-type <greenfield|brownfield> [--space <selected-space>] [--intent <selected-intent>]
+bun .aidlc/tools/aidlc.ts engine graph validate-grid --project-type <greenfield|brownfield> [--space <selected-space>] [--intent <selected-intent>]
 ```
 With no `--proposal`, the validator reads `proposalPath`, so every run checks
 the grid you last wrote there.
@@ -756,7 +758,7 @@ before the rename); the composer never flips it. Mark that row read-only in
 the rendered proposal: a recompose lands only `changes.skip` / `changes.add`,
 so a policy edit there would be discarded. Name the route instead: when the
 person asks to raise or lower it, the conductor runs
-`{{INVOKE}} engine config set guard-policy <value> --message <id>` (`<id>` the message they asked in), before any scope change
+`bun .aidlc/tools/aidlc.ts engine config set guard-policy <value> --message <id>` (`<id>` the message they asked in), before any scope change
 they also asked for. Changing scope alone never lowers the running policy.
 Pass `guardPolicy` to `validate-grid --guard-policy <value>` so the
 validator checks it with the grid. For a front composition the conductor
@@ -803,7 +805,7 @@ ceremony a person gets without composing (when the validator echoes no
 that the human's edit turns custom keeps the Guard Policy and settings the
 gate showed, with their change applied. Either way, move one
 only when the evidence gives a reason, as a SKIP needs one (see "Scope
-settings" in `{{HARNESS_DIR}}/knowledge/aidlc-composer-agent/composing.md`). No value removes a
+settings" in `.aidlc/knowledge/aidlc-composer-agent/composing.md`). No value removes a
 gate, Plan Approval, a required question, or the audit trail. A global kill
 switch such as `AIDLC_DISABLE_SENSORS=1` still forces its ceremony off
 whatever the scope says: when the validator's advisories name one forcing an
@@ -849,7 +851,7 @@ turns plan approval off in their own words, never through a proposal), and
 ceiling, so a request for full reviews is `"review": "adversarial"` even on a
 capped scope, and no stage changes; the scope's own level (for example
 `"advisory"` on bugfix) returns it to the scope's normal reviews. Before returning an `on` switch, read the
-effective value with `{{INVOKE}} engine config get
+effective value with `bun .aidlc/tools/aidlc.ts engine config get
 <sensors|learnings|summary-confirmation|collaborators>`: when it reports `from env
 AIDLC_DISABLE_<NAME>` or `from AIDLC_DISABLE_<NAME> in <file>`, a kill switch
 overrides every setting, so return no change for it and say in one line which
@@ -972,7 +974,7 @@ when they save it. Each granted keyword must be one word of lowercase letters,
 digits, and hyphens; leave out any other and say so in one line, because the
 word is placed in a command. Check them before the gate:
 ```
-{{INVOKE}} engine graph validate-grid --keywords <granted,csv>
+bun .aidlc/tools/aidlc.ts engine graph validate-grid --keywords <granted,csv>
 ```
 and the conductor passes them to `scope save --keywords <granted,csv>`, which
 says in one line when another plan has the same hint.

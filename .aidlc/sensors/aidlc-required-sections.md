@@ -1,7 +1,7 @@
 ---
 id: required-sections
 kind: deterministic
-command: {{INVOKE}} engine sensor-required-sections
+command: bun .aidlc/tools/aidlc.ts engine sensor-required-sections
 default_severity: advisory
 fire_on: gate
 description: Checks at the gate that stage output contains the required H2 headings
