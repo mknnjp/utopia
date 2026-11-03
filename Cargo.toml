@@ -7,7 +7,7 @@ rust-version = "1.73"
 [dependencies]
 anyhow = "1.0.95"
 argon2 = "0.5.3"
-async-trait = "0.1.86"
+async-trait = "0.1.92"
 axum = "0.7.9"
 base64 = "0.22.1"
 chrono = { version = "0.4.39", features = ["serde"] }
