@@ -404,6 +404,9 @@ Write and edit files yourself with your file tools, never through the shell (no 
 
 Use only the subsection that matches the active harness.
 
-### GitHub Copilot
+### opencode
 
-If `directive.reviewer` is present, invoke the reviewer as a sub-agent (delegate to the reviewer custom agent - the `.github/agents/` roster is exposed as callable agents).
+If `directive.reviewer` is present, invoke the reviewer as a sub-agent (via the `task` tool targeting the reviewer agent).
+
+---
+

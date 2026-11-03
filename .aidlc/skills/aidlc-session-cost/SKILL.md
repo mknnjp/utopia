@@ -4,7 +4,7 @@ description: >
   Read-only session cost view. Prints deterministic aggregates for the
   current workflow — duration, stage outcomes, memory entries, sensor
   firings, learnings captured — sourced entirely from
-  `{{INVOKE}} engine runtime summary`. Never mutates workflow state,
+  `bun .aidlc/tools/aidlc.ts engine runtime summary`. Never mutates workflow state,
   never emits audit events, never writes files.
 argument-hint: ""
 user-invocable: true
@@ -21,7 +21,7 @@ cleared their gates, how much the orchestrator wrote to its observation
 diaries, how often sensors fired, and how many learnings were captured.
 
 Every number this skill prints comes from
-`{{INVOKE}} engine runtime summary --json` — the materialised,
+`bun .aidlc/tools/aidlc.ts engine runtime summary --json` — the materialised,
 event-sourced view over `runtime-graph.json`. This skill does **no
 counting of its own**. It does not estimate tokens, does not walk the
 artefact tree, and does not read `audit.md`. If a number isn't in the
@@ -40,7 +40,7 @@ point in a workflow, including mid-stage.
 Run:
 
 ```bash
-{{INVOKE}} engine runtime summary --json
+bun .aidlc/tools/aidlc.ts engine runtime summary --json
 ```
 
 If the command exits non-zero (no `runtime-graph.json` yet — the
